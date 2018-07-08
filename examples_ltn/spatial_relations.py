@@ -233,10 +233,12 @@ with tf.Session() as sess:
     for i in range(10000):
         sess.run(opt,feed_dict=feed_dict)
         if i % 100 == 0:
-            print(i, "sat level ----> ", sess.run(-loss, feed_dict=feed_dict))
+            sat_level=sess.run(-loss, feed_dict=feed_dict)
+            print(i, "sat level ----> ", sat_level)
+            if sat_level > .99:
+                break
 
 # evaluate the truth value of a formula ....
-
     print(sess.run([Forall((x,y,z),Implies(I(x,y),
                                            Implies(P[i](y,z),P[i](x,z))))
                     for i in range(6)],feed_dict=feed_dict))
