@@ -1,6 +1,6 @@
 # Logic Tensor Networks (LTN)
 
-### Dependencies
+## Dependencies
 
 The following is what we are using for development. Basically similar versions should run fine.
 
@@ -9,7 +9,16 @@ The following is what we are using for development. Basically similar versions s
 * numpy >= 1.13.3 (for examples and tests)
 * matplotlib >= 2.1 (for examples)
 
-Installing is easy using ``pip install tensorflow numpy matplotlib`` or using a virtualenv.
+Installing dependencies is easy. Just use ``pip install tensorflow numpy matplotlib`` or use a virtualenv.
+
+## Repository structure
+
+* ``logictensornetworks.py`` -- core system for defining constants, variables, predicates, functions and formulas. 
+* ``logictensornetworks_wrapper.py`` -- a simple wrapper that allows to express constants, variables, predicates, functions and formulas using strings. 
+* ``logictensornetworks_library.py`` -- a collection of useful functions. 
+* ``examples_ltn`` -- examples using the core system
+* ``examples_ltnw`` -- examples using the wrapper
+* ``tests`` -- tests
 
 ## Running tests
 
