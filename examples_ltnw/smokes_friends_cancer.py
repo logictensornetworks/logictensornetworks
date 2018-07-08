@@ -23,12 +23,12 @@ friends = [('a','b'),('a','e'),('a','f'),('a','g'),('b','c'),('c','d'),('e','f')
 smokes = ['a','e','f','g','j','n']
 cancer = ['a','e']
 
-p = ltnw.variable("p",tf.concat(list(ltnw.CONSTANTS.values()),axis=0))
-q = ltnw.variable("q",tf.concat(list(ltnw.CONSTANTS.values()),axis=0))
+ltnw.variable("p",tf.concat(list(ltnw.CONSTANTS.values()),axis=0))
+ltnw.variable("q",tf.concat(list(ltnw.CONSTANTS.values()),axis=0))
 
-Friends = ltnw.predicate('Friends',size*2)
-Smokes = ltnw.predicate('Smokes',size)
-Cancer = ltnw.predicate('Cancer',size)
+ltnw.predicate('Friends',size*2)
+ltnw.predicate('Smokes',size)
+ltnw.predicate('Cancer',size)
 
 [ltnw.formula("Friends(%s,%s)" %(x,y)) for (x,y) in friends]
 [ltnw.formula("~Friends(%s,%s)" %(x,y)) for x in g1 for y in g1 if (x,y) not in friends and x < y]
@@ -56,7 +56,10 @@ ltnw.SESSION.run(tf.global_variables_initializer())
 for i in range(10000):
         ltnw.SESSION.run(optimize)
         if i % 100 == 0:
-            print(i,"=====>",ltnw.SESSION.run(loss),ltnw.SESSION.run(ltn.BIAS))
+            sat_level=ltnw.SESSION.run(loss)
+            print(i,"=====>",sat_level,ltnw.SESSION.run(ltn.BIAS))
+            if sat_level >.99:
+                break
 
 for x in g:
     print(x," = ",ltnw.ask(x).squeeze())
