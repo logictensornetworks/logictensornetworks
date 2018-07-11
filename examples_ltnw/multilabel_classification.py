@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-import logictensornetworks_wrapper as ltnw
 import logging
 logger = logging.getLogger()
 logger.basicConfig = logging.basicConfig(level=logging.DEBUG)
-
 import numpy as np
 import matplotlib.pyplot as plt
+
+import logictensornetworks_wrapper as ltnw
 
 nr_samples=500
 
