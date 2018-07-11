@@ -91,21 +91,9 @@ def function(label,*args,**kwargs):
         FUNCTIONS[label]=ltn.function(label,*args,**kwargs)
         return FUNCTIONS[label]
 
-OPERATORS={"|" : ltn.Or,
-           "&" : ltn.And,
-           "~" : ltn.Not,
-           "->" : ltn.Implies}
-
 def _parse_term(text):
     """ """
     left_parenthesis, right_parenthesis, colon = map(Suppress, "():")
-    exists = Keyword("exists")
-    forall = Keyword("forall")
-    implies = Literal("->")
-    or_ = Literal("|")
-    and_ = Literal("&")
-    not_ = Literal("~")
-    
 
     symbol = Word( alphas+"_"+"?"+".", alphanums+"_"+"?"+"."+"-")
     
@@ -117,6 +105,13 @@ def _parse_term(text):
     result = term.parseString(text, parseAll=True)
     
     return result.asList()[0]
+
+OPERATORS={"|" : ltn.Or,
+           "&" : ltn.And,
+           "~" : ltn.Not,
+           "->" : ltn.Implies,
+           "%" : ltn.Equiv}
+
 def _parse_formula(text):
     """
     >>> formula = "p(a,b)"
@@ -167,6 +162,7 @@ def _parse_formula(text):
     or_ = Literal("|")
     and_ = Literal("&")
     not_ = Literal("~")
+    equiv_ = Literal("%")
     
 
     symbol = Word( alphas+"_"+"?"+".", alphanums+"_"+"?"+"."+"-")
@@ -188,6 +184,7 @@ def _parse_formula(text):
     formula << operatorPrecedence(operand,[(not_, 1, opAssoc.RIGHT),
                                            (and_, 2, opAssoc.LEFT),
                                            (or_, 2, opAssoc.LEFT),
+                                           (equiv_, 2, opAssoc.RIGHT),
                                            (implies, 2, opAssoc.RIGHT)])
     result = formula.parseString(text, parseAll=True)
     
@@ -222,7 +219,6 @@ def _build_formula(formula):
     if not isinstance(formula,list) or not len(formula)>1:
         raise Exception("Cannot build formula for %s" % str(formula))
     elif str(formula[0]) in PREDICATES:
-        
         terms=[]
         for t in formula[1]:
             _t=_build_term(t)
