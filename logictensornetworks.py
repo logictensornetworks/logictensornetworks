@@ -262,7 +262,7 @@ def predicate(label,number_of_features_or_vars,pred_definition=None):
             X = tf.concat([tf.ones((tf.shape(tensor_args)[0], 1)),
                            tensor_args], 1)
             XW = tf.matmul(tf.tile(tf.expand_dims(X, 0), [LAYERS, 1, 1]), W)
-            XWX = tf.squeeze(tf.matmul(tf.expand_dims(X, 1), tf.transpose(XW, [1, 2, 0])), squeeze_dims=[1])
+            XWX = tf.squeeze(tf.matmul(tf.expand_dims(X, 1), tf.transpose(XW, [1, 2, 0])), axis=[1])
             gX = tf.matmul(tf.tanh(XWX), u)
             result = tf.sigmoid(gX, name=app_label)
             return result
