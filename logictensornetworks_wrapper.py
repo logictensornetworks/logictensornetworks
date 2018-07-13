@@ -13,9 +13,6 @@ ParserElement.enablePackrat()
 import tensorflow as tf
 import logictensornetworks as ltn
 import logging
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-
 
 CONFIGURATION = { "max_nr_iterations" : 1000, "error_on_redeclare" : False}
 
@@ -38,11 +35,11 @@ def constant(label,*args,**kwargs):
     if label in CONSTANTS and args==() and kwargs=={}:
         return CONSTANTS[label]
     elif label in CONSTANTS and CONFIGURATION.get("error_on_redeclare"):
-        logger.error("Attempt at redeclaring existing constant %s" % label)
+        logging.getLogger(__name__).error("Attempt at redeclaring existing constant %s" % label)
         raise Exception("Attempt at redeclaring existing constant %s" % label)
     else:
         if label in CONSTANTS:
-            logger.warn("Redeclaring existing constant %s" % label)
+            logging.getLogger(__name__).warn("Redeclaring existing constant %s" % label)
         CONSTANTS[label]=ltn.constant(label,*args,**kwargs)
         return CONSTANTS[label]
 
@@ -59,11 +56,11 @@ def variable(label,*args,**kwargs):
     if label in VARIABLES and args==() and kwargs=={}:
         return VARIABLES[label]
     elif label in VARIABLES and CONFIGURATION.get("error_on_redeclare"):
-        logger.error("Attempt at redeclaring existing variable %s" % label)
+        logging.getLogger(__name__).error("Attempt at redeclaring existing variable %s" % label)
         raise Exception("Attempt at redeclaring existing variable %s" % label)
     else:
         if label in VARIABLES:
-            logger.warn("Redeclaring existing variable %s" % label)
+            logging.getLogger(__name__).warn("Redeclaring existing variable %s" % label)
         VARIABLES[label]=ltn.variable(label,*args,**kwargs)
         return VARIABLES[label]
 
@@ -71,11 +68,11 @@ def predicate(label,*args,**kwargs):
     if label in PREDICATES and args==() and kwargs=={}:
         return PREDICATES[label]
     elif label in PREDICATES and CONFIGURATION.get("error_on_redeclare"):
-        logger.error("Attempt at redeclaring existing predicate %s" % label)
+        logging.getLogger(__name__).error("Attempt at redeclaring existing predicate %s" % label)
         raise Exception("Attempt at redeclaring existing predicate %s" % label)
     else:
         if label in PREDICATES:
-            logger.warn("Redeclaring existing predicate %s" % label)
+            logging.getLogger(__name__).warn("Redeclaring existing predicate %s" % label)
         PREDICATES[label]=ltn.predicate(label,*args,**kwargs)
         return PREDICATES[label]
 
@@ -83,11 +80,11 @@ def function(label,*args,**kwargs):
     if label in FUNCTIONS and args==() and kwargs=={}:
         return FUNCTIONS[label]
     elif label in FUNCTIONS and CONFIGURATION.get("error_on_redeclare"):
-        logger.error("Attempt at redeclaring existing function %s" % label)
+        logging.getLogger(__name__).error("Attempt at redeclaring existing function %s" % label)
         raise Exception("Attempt at redeclaring existing function %s" % label)
     else:
         if label in FUNCTIONS:
-            logger.warn("Redeclaring existing function %s" % label)
+            logging.getLogger(__name__).warn("Redeclaring existing function %s" % label)
         FUNCTIONS[label]=ltn.function(label,*args,**kwargs)
         return FUNCTIONS[label]
 
@@ -285,17 +282,18 @@ def initialize_knowledgebase(keep_session=True,
     optimizer=None,
     formula_aggregator=lambda *x: tf.reduce_mean(tf.concat(x,axis=0)),
     initial_sat_level_threshold=0.0,
-    max_epochs=10000,
+    track_sat_levels=100,
+    max_trials=10000,
     feed_dict={}):
     global SESSION,OPTIMIZER,KNOWLEDGEBASE
 
     if FORMULAS == {}:
         raise Exception("No formulas defined.")
 
-    logger.info("Initializing knowledgebase")
+    logging.getLogger(__name__).info("Initializing knowledgebase")
     KNOWLEDGEBASE=formula_aggregator(*FORMULAS.values())
     
-    logger.info("Initializing optimizer")
+    logging.getLogger(__name__).info("Initializing optimizer")
     if optimizer is None:
         OPTIMIZER = tf.train.GradientDescentOptimizer(learning_rate=0.1)
     else:
@@ -303,22 +301,22 @@ def initialize_knowledgebase(keep_session=True,
 
     OPTIMIZER=OPTIMIZER.minimize(-KNOWLEDGEBASE)
 
-    logger.info("Assembling feed dict")
+    logging.getLogger(__name__).info("Assembling feed dict")
     _feed_dict=_compute_feed_dict(feed_dict)
-    logger.info("Initializing Tensorflow session")
+    logging.getLogger(__name__).info("Initializing Tensorflow session")
     SESSION = tf.Session()
     init = tf.global_variables_initializer()
     SESSION.run(init)
     sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
     i=0
-    for i in range(max_epochs):
+    for i in range(max_trials):
         SESSION.run(init,feed_dict=_feed_dict)
         sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
         if  initial_sat_level_threshold is not None and sat_level >= initial_sat_level_threshold:
             break
-        if i % 100 == 0:
-            logger.info("INITIALIZE %s sat level -----> %s" % (i,sat_level))
-    logger.info("INITIALIZED with sat level = %s" % (sat_level))
+        if track_sat_levels is not None and i % track_sat_levels == 0:
+            logging.getLogger(__name__).info("INITIALIZE %s sat level -----> %s" % (i,sat_level))
+    logging.getLogger(__name__).info("INITIALIZED with sat level = %s" % (sat_level))
 
 
 def train(max_epochs=10000,
@@ -334,8 +332,8 @@ def train(max_epochs=10000,
         sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
         
         if track_sat_levels is not None and i % track_sat_levels == 0:
-            logger.info("TRAINING %s sat level -----> %s" % (i,sat_level))
-                
+            logging.getLogger(__name__).info("TRAINING %s sat level -----> %s" % (i,sat_level))
+            # print("TRAINING %s sat level -----> %s" % (i,sat_level))
         if sat_level_epsilon is not None and sat_level > sat_level_epsilon:
             break
         

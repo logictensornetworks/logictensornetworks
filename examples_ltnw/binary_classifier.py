@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-import logging
-logger = logging.getLogger()
-logger.basicConfig = logging.basicConfig(level=logging.DEBUG)
+import logging; logging.basicConfig(level=logging.INFO)
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,7 +22,7 @@ ltnw.formula("forall ?data_A: A(?data_A)")
 ltnw.formula("forall ?data_not_A: ~A(?data_not_A)")
 
 ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
-sat_level=ltnw.train(track_sat_levels=True,sat_level_epsilon=.99)
+sat_level=ltnw.train(track_sat_levels=1000,sat_level_epsilon=.99)
     
 plt.figure(figsize=(12,8))
 result=ltnw.ask("A(?data)")
@@ -51,7 +49,7 @@ plt.title("A(x) - test data")
 result=ltnw.ask("~A(?data_test)")
 plt.subplot(2,2,4)
 plt.scatter(data_test[:,0],data_test[:,1],c=result.squeeze())
-plt.colorbar()
+
 plt.title("~A(x) - test data")
 plt.show()
 

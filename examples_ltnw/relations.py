@@ -49,7 +49,7 @@ ltnw.formula("forall ?data, ?data_2: (A(?data) & B(?data_2)) -> R_A_B(?data,?dat
 ltnw.formula("forall ?data, ?data_2: R_A_B(?data,?data_2) -> (A(?data) & B(?data_2))")
 
 ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
-sat_level=ltnw.train(track_sat_levels=True,sat_level_epsilon=.99,max_epochs=epochs)
+sat_level=ltnw.train(track_sat_levels=1000,sat_level_epsilon=.99,max_epochs=epochs)
 
 plt.figure(figsize=(12,8))
 plt.subplot(2,2,1)

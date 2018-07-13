@@ -139,7 +139,7 @@ class TestBasics(unittest.TestCase):
         ltnw.formula("forall ?data_not_A: ~A(?data_not_A)")
         
         ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
-        sat_level=ltnw.train(track_sat_levels=True,sat_level_epsilon=.99)
+        sat_level=ltnw.train(track_sat_levels=1000,sat_level_epsilon=.99)
         
         self.assertGreater(sat_level,.8)
             
