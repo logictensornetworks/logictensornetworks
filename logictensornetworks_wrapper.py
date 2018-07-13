@@ -285,7 +285,7 @@ def initialize_knowledgebase(keep_session=True,
     optimizer=None,
     formula_aggregator=lambda *x: tf.reduce_mean(tf.concat(x,axis=0)),
     initial_sat_level_threshold=0.0,
-    max_iterations=10000,
+    max_epochs=10000,
     feed_dict={}):
     global SESSION,OPTIMIZER,KNOWLEDGEBASE
 
@@ -311,7 +311,7 @@ def initialize_knowledgebase(keep_session=True,
     SESSION.run(init)
     sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
     i=0
-    for i in range(max_iterations):
+    for i in range(max_epochs):
         SESSION.run(init,feed_dict=_feed_dict)
         sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
         if  initial_sat_level_threshold is not None and sat_level >= initial_sat_level_threshold:
@@ -321,8 +321,8 @@ def initialize_knowledgebase(keep_session=True,
     logger.info("INITIALIZED with sat level = %s" % (sat_level))
 
 
-def train(max_iterations=10000,
-        track_sat_levels=True,
+def train(max_epochs=10000,
+        track_sat_levels=100,
         sat_level_epsilon=.99,
         feed_dict={}):
     global SESSION,OPTIMIZER,KNOWLEDGEBASE
@@ -330,10 +330,10 @@ def train(max_iterations=10000,
         raise Exception("Knowledgebase not initialized.")
 
     _feed_dict=_compute_feed_dict(feed_dict)
-    for i in range(max_iterations):
+    for i in range(max_epochs):
         sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
         
-        if i % 100 == 0:
+        if track_sat_levels is not None and i % track_sat_levels == 0:
             logger.info("TRAINING %s sat level -----> %s" % (i,sat_level))
                 
         if sat_level_epsilon is not None and sat_level > sat_level_epsilon:

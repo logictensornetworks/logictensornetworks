@@ -30,7 +30,7 @@ ltnw.formula("forall ?data: A(?data) -> ~B(?data)")
 ltnw.formula("forall ?data: B(?data) -> ~A(?data)")
 
 ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
-sat_level=ltnw.train(track_sat_levels=True,sat_level_epsilon=.99,max_iterations=20000)
+sat_level=ltnw.train(track_sat_levels=True,sat_level_epsilon=.99,max_epochs=20000)
 
 plt.figure(figsize=(10,8))
 result=ltnw.ask("A(?data)")

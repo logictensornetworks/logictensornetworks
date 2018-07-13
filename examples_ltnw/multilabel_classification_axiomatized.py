@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 nr_samples=1000
-max_iterations=20000
+max_epochs=20000
 
 data=np.random.uniform([0,0],[1.,1.],(nr_samples,2)).astype(np.float32)
 data_A=data[np.where(np.sum(np.square(data-[.5,.5]),axis=1)<.09)]
@@ -33,7 +33,7 @@ ltnw.formula("forall ?data: A(?data) -> ~B(?data)")
 ltnw.formula("forall ?data: ~B(?data) -> A(?data)")
 
 ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
-sat_level=ltnw.train(max_iterations=max_iterations)
+sat_level=ltnw.train(max_epochs=max_epochs)
 
 plt.figure(figsize=(10,8))
 result=ltnw.ask("A(?data)")

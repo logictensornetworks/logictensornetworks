@@ -80,6 +80,6 @@ print("%s" % "\n".join(ltnw.FORMULAS.keys()))
 ltnw.initialize_knowledgebase(optimizer=tf.train.RMSPropOptimizer(learning_rate=0.01,decay=.9),
                               initial_sat_level_threshold=.5)
 
-ltnw.train(max_iterations=100)
+ltnw.train(max_epochs=100)
 
 show_result(clusters)

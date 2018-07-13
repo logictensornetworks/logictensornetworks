@@ -40,7 +40,7 @@ for f in formulas:
     ltnw.formula(f)
 
 ltnw.initialize_knowledgebase(optimizer=tf.train.GradientDescentOptimizer(learning_rate=learning_rate))
-ltnw.train(max_iterations=epochs)
+ltnw.train(max_epochs=epochs)
 
 # Testing example
 x=ltnw.variable("x",1)

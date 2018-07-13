@@ -89,7 +89,7 @@ feed_dict={ "?left_xy"  : spatial_relations_data.generate_data(nr_examples,spati
 ltnw.initialize_knowledgebase(feed_dict=feed_dict,
                               optimizer=tf.train.AdamOptimizer(0.05),
                               formula_aggregator=lambda *x: tf.reduce_min(tf.concat(x,axis=0)))
-ltnw.train(feed_dict=feed_dict,max_iterations=10000)
+ltnw.train(feed_dict=feed_dict,max_epochs=10000)
 
 # 5) evaluate the truth of formulas not given directly to the model
 for f in ["forall ?x,?y,?z: Contained_in(?x,?y) -> (Left(?y,?z)->Left(?x,?z))",
