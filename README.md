@@ -33,12 +33,25 @@ There are various examples for LTN core  ``examples_ltn`` and how to use the wra
 
 Run examples from the project root, e.g. ``python3.6 examples_ltn/multilable_classifier_simple.py``
 
-## Documentation
+
+## Papers 
+
+* [Logic Tensor Networks: Deep Learning and Logical Reasoning from Data and Knowledge, Luciano Serafini and  Artur d'Avila Garcez, Arxiv.org](https://arxiv.org/abs/1606.04422)
+* [Learning and Reasoning with Logic Tensor Networks, Luciano Serafini and rtur d'Avila Garces, Proc. AI*IA 2016](https://link.springer.com/chapter/10.1007/978-3-319-49130-1_25)
+* [Learning and reasoning in logic tensor networks: theory and application to semantic image interpretation, Luciano Serafini, Ivan Donadello, Artur d'Avila Garces, Proc. ACM SAC 2017](https://dl.acm.org/citation.cfm?id=3019642)
+* [Logic tensor networks for semantic image interpretation, Ivan Donadello, Luciano Serafini and Artur d'Avila Garces. Proc. IJCAI 2017](https://www.ijcai.org/proceedings/2017/0221.pdf)
+
+## Tutorias 
 
 Checkout recent tutorials on Logic Tensor Networks (LTN)
 
 * [IJCNN 2018 tutorial](https://sites.google.com/fbk.eu/ltn/tutorial-ijcnn-2018)
 * [IJCAI 2018 tutorial](https://sites.google.com/fbk.eu/ltn/tutorial-ijcai-2018)
+
+## Other resources
+* [What are “Logic Tensor Networks”?, Lucas Buchberger](https://lucas-bechberger.de/2017/11/16/what-are-logic-tensor-networks/)
+* [Dagstuhl Seminar “Human-Like Neural-Symbolic Computation, Lucas Buchberger](https://lucas-bechberger.de/2017/05/17/dagstuhl-seminar-human-like-neural-symbolic-computation/)
+* [Human-Like Neural-Symbolic Computing. 2017, Dagstuhl Seminar 17192](https://www.dagstuhl.de/17192)
 
 ## License
 
