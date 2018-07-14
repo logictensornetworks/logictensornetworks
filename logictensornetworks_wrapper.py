@@ -338,6 +338,7 @@ def train(max_epochs=10000,
             break
         
         SESSION.run(OPTIMIZER,feed_dict=_feed_dict)
+    logging.getLogger(__name__).info("TRAINING finished after %s epochs with sat level %s" % (i,sat_level))
     return sat_level
 
 def ask(term_or_formula,feed_dict={}):
