@@ -40,7 +40,10 @@ def set_tnorm(tnorm):
             return 1-tf.reduce_prod(1-wffs,axis=-1,keepdims=True)
 
         def F_Implies(wff1, wff2):
-            return tf.maximum(tf.to_float(tf.less_equal(wff1,wff2)),wff2/wff1)
+            le_wff1_wff2 = tf.to_float(tf.less_equal(wff1,wff2))
+            gt_wff1_wff2 = tf.to_float(tf.greater(wff1,wff2))
+            return le_wff1_wff2 + gt_wff1_wff2*wff2/wff1
+
 
         def F_Not(wff):
             # according to standard goedel logic is
@@ -297,7 +300,7 @@ def cross_args(args):
     result_args = tf.split(result_flat,[tf.shape(arg)[-1] for arg in args],1)
     return result, result_args
 
-def cross_2args(Y,X):
+def cross_2args(X,Y):
     if X.doms == [] and Y.doms == []:
         result = tf.concat([X,Y],axis=-1)
         result.doms = []
