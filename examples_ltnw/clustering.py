@@ -1,6 +1,4 @@
-import logging
-logger = logging.getLogger()
-logger.basicConfig = logging.basicConfig(level=logging.DEBUG)
+import logging; logging.basicConfig(level=logging.INFO)
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt

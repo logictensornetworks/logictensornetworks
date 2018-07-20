@@ -232,7 +232,7 @@ def function(label, input_shape_spec, output_shape_spec=1,fun_definition=None):
             result = tf.reshape(result, tf.concat([tf.shape(crossed_args)[:-1],
                                                    tf.shape(result)[-1:]],axis=0))
         else:
-            result = tf.reshape(result, (1,))
+            result = tf.reshape(result, (output_shape_spec,))
         result.doms = crossed_args.doms
         return result
     fun.pars = pars
