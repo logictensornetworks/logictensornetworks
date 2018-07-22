@@ -3,7 +3,6 @@
 import numpy
 import unittest
 
-import logictensornetworks as ltn
 import logictensornetworks_wrapper as ltnw
 
 class TestBasics(unittest.TestCase):
@@ -44,7 +43,6 @@ class TestBasics(unittest.TestCase):
     def testBuildTerm(self):
         
         data = numpy.random.uniform([-1,-1],[1,1],(500,2),).astype(numpy.float32)
-        # defining the language
         ltnw.constant("c",2)
         ltnw.variable("?var",data)
         ltnw.function("f",2,fun_definition=lambda d:d)
@@ -56,8 +54,6 @@ class TestBasics(unittest.TestCase):
 
         self.assertIsNotNone(ltnw._build_term(['f', ['?var']]))
         self.assertIsNotNone(ltnw._build_term(['f', [['f', ['?var']]]]))
-        
-#        self.assertIsNotNone(ltnw._build_term(['g', ['?var','?var']]))
 
         with self.assertRaises(Exception):
             ltnw._build_term(['h', ['?var']]) # h not declared
@@ -65,9 +61,17 @@ class TestBasics(unittest.TestCase):
             self.assertRaises(ltnw._build_term(['g', ['?vars']])) # vars not declared
 
     def testParseFormula(self):
-        pass
-#        self.assertEqual(ltnw._parse_formula("a"),"a")
-#        self.assertEqual(ltnw._parse_term("f(c)"),['f', ['c']])
+        
+        self.assertEqual(ltnw._parse_formula("P(a)"),["P",["a"]])
+        self.assertEqual(ltnw._parse_formula("P(a,b)"),["P",["a","b"]])
+        self.assertEqual(ltnw._parse_formula("P(f(a))"),["P",[["f",["a"]]]])
+        self.assertEqual(ltnw._parse_formula("P(f(a),b)"),["P",[["f",["a"]],"b"]])
+        self.assertEqual(ltnw._parse_formula("~P(a)"),['~', ['P', ['a']]])        
+        self.assertEqual(ltnw._parse_formula("P(a) & P(b)"),[['P', ['a']], '&', ['P', ['b']]])
+        self.assertEqual(ltnw._parse_formula("P(a) | P(b)"),[['P', ['a']], '|', ['P', ['b']]])
+        self.assertEqual(ltnw._parse_formula("P(a) -> P(b)"),[['P', ['a']], '->', ['P', ['b']]])
+        self.assertEqual(ltnw._parse_formula("forall ?a: P(?a)"),['forall', '?a', ['P', ['?a']]])
+        self.assertEqual(ltnw._parse_formula("exists ?a: P(?a)"),['exists', '?a', ['P', ['?a']]])
 
     def testBuildFormula(self):
         
@@ -123,15 +127,14 @@ class TestBasics(unittest.TestCase):
 
         self.assertIsNotNone(ltnw._build_formula(ltnw._parse_formula("P(c) | P(?var)")))
 
-    def testSimplePredicate(self):
+class TestSimpleExperiments(unittest.TestCase):
+
+    def testSimplePredicateOptimization(self):
         
         nr_samples=100
 
-        data_A=numpy.random.uniform([0,0],[.3,1.],(nr_samples,2)).astype("float32")
-        data_not_A=numpy.random.uniform([.7,0],[1.,1.],(nr_samples,2)).astype("float32")
-        
-        ltnw.variable("?data_A",data_A)
-        ltnw.variable("?data_not_A",data_not_A)
+        ltnw.variable("?data_A",numpy.random.uniform([0.,0.],[.1,1.],(nr_samples,2)).astype("float32"))
+        ltnw.variable("?data_not_A",numpy.random.uniform([2.,0],[3.,1.],(nr_samples,2)).astype("float32"))
         
         ltnw.predicate("A",2)
         
@@ -139,16 +142,15 @@ class TestBasics(unittest.TestCase):
         ltnw.formula("forall ?data_not_A: ~A(?data_not_A)")
         
         ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
-        sat_level=ltnw.train(track_sat_levels=1000,sat_level_epsilon=.99)
+        sat_level=ltnw.train(track_sat_levels=10000,sat_level_epsilon=.99)
         
         self.assertGreater(sat_level,.8)
             
-        print("a is in A: %s" % ltnw.ask("A(a)"))
-        print("b is in A: %s" % ltnw.ask("A(b)"))
-        print("a is in B: %s" % ltnw.ask("B(a)"))
-        print("b is in B: %s" % ltnw.ask("B(b)"))
+        ltnw.constant("a",[0.5,0.5])
+        ltnw.constant("b",[2.5,0.5])
         
-        
+        self.assertGreater(ltnw.ask("A(a)")[0],.8)
+        self.assertGreater(ltnw.ask("~A(b)")[0],.8)
 
 if __name__ == "__main__":
     unittest.main()
