@@ -24,11 +24,11 @@ ltnw.variable("?data_A",data_A)
 ltnw.variable("?data_B",data_B)
 ltnw.variable("?data",data)
 
-ltnw.formula("forall ?data_A: A(?data_A)")
-ltnw.formula("forall ?data_B: B(?data_B)")
+ltnw.axiom("forall ?data_A: A(?data_A)")
+ltnw.axiom("forall ?data_B: B(?data_B)")
 
-ltnw.formula("forall ?data: A(?data) -> ~B(?data)")
-ltnw.formula("forall ?data: ~B(?data) -> A(?data)")
+ltnw.axiom("forall ?data: A(?data) -> ~B(?data)")
+ltnw.axiom("forall ?data: ~B(?data) -> A(?data)")
 
 ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
 sat_level=ltnw.train(max_epochs=max_epochs,track_sat_levels=track_sat_levels)

@@ -34,8 +34,8 @@ ltnw.predicate("eq",2,ltnl.equal_euclidian)
 
 # defining the theory
 for f in ["eq(f(x_%s),y_%s)" % (i,i) for i in range(len(train_X))]:
-    ltnw.formula(f)
-print("\n".join(sorted(ltnw.FORMULAS.keys())))
+    ltnw.axiom(f)
+print("\n".join(sorted(ltnw.AXIOMS.keys())))
 
 # initializing knowledgebase and optimizing
 ltnw.initialize_knowledgebase(optimizer=tf.train.GradientDescentOptimizer(learning_rate=learning_rate))

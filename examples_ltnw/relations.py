@@ -25,25 +25,25 @@ ltnw.variable("?data_2",data)
 ltnw.predicate("A",2)
 ltnw.predicate("B",2)
 
-ltnw.formula("forall ?data_A: A(?data_A)")
-ltnw.formula("forall ?data_B: ~A(?data_B)")
+ltnw.axiom("forall ?data_A: A(?data_A)")
+ltnw.axiom("forall ?data_B: ~A(?data_B)")
 
-ltnw.formula("forall ?data_B: B(?data_B)")
-ltnw.formula("forall ?data_A: ~B(?data_A)")
+ltnw.axiom("forall ?data_B: B(?data_B)")
+ltnw.axiom("forall ?data_A: ~B(?data_A)")
 
 ltnw.predicate("R_A_A",4)
 ltnw.predicate("R_B_B",4) 
 ltnw.predicate("R_A_B",4)
 
 
-ltnw.formula("forall ?data, ?data_2: (A(?data) & A(?data_2)) -> R_A_A(?data,?data_2)")
-ltnw.formula("forall ?data, ?data_2: R_A_A(?data,?data_2) -> (A(?data) & A(?data_2))")
+ltnw.axiom("forall ?data, ?data_2: (A(?data) & A(?data_2)) -> R_A_A(?data,?data_2)")
+ltnw.axiom("forall ?data, ?data_2: R_A_A(?data,?data_2) -> (A(?data) & A(?data_2))")
 
-ltnw.formula("forall ?data, ?data_2: (B(?data) & B(?data_2)) -> R_B_B(?data,?data_2)")
-ltnw.formula("forall ?data, ?data_2: R_B_B(?data,?data_2) -> (B(?data) & B(?data_2))")
+ltnw.axiom("forall ?data, ?data_2: (B(?data) & B(?data_2)) -> R_B_B(?data,?data_2)")
+ltnw.axiom("forall ?data, ?data_2: R_B_B(?data,?data_2) -> (B(?data) & B(?data_2))")
 
-ltnw.formula("forall ?data, ?data_2: (A(?data) & B(?data_2)) -> R_A_B(?data,?data_2)")
-ltnw.formula("forall ?data, ?data_2: R_A_B(?data,?data_2) -> (A(?data) & B(?data_2))")
+ltnw.axiom("forall ?data, ?data_2: (A(?data) & B(?data_2)) -> R_A_B(?data,?data_2)")
+ltnw.axiom("forall ?data, ?data_2: R_A_B(?data,?data_2) -> (A(?data) & B(?data_2))")
 
 ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
 sat_level=ltnw.train(track_sat_levels=1000,sat_level_epsilon=.99,max_epochs=epochs)

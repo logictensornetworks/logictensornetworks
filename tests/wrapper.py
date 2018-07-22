@@ -138,8 +138,8 @@ class TestSimpleExperiments(unittest.TestCase):
         
         ltnw.predicate("A",2)
         
-        ltnw.formula("forall ?data_A: A(?data_A)")
-        ltnw.formula("forall ?data_not_A: ~A(?data_not_A)")
+        ltnw.axiom("forall ?data_A: A(?data_A)")
+        ltnw.axiom("forall ?data_not_A: ~A(?data_not_A)")
         
         ltnw.initialize_knowledgebase(initial_sat_level_threshold=.1)
         sat_level=ltnw.train(track_sat_levels=10000,sat_level_epsilon=.99)

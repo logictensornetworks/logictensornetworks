@@ -22,14 +22,16 @@ VARIABLES={}
 FUNCTIONS={}
 TERMS={}
 FORMULAS={}
+AXIOMS={}
 
 def _reset():
-    global CONSTANTS,PREDICATES,VARIABLES,FUNCTIONS,TERMS,FORMULAS
+    global CONSTANTS,PREDICATES,VARIABLES,FUNCTIONS,TERMS,FORMULAS,AXIOMS
     CONSTANTS={}
     PREDICATES={}
     VARIABLES={}
     FUNCTIONS={}
     FORMULAS={}
+    AXIOMS={}
 
 def constant(label,*args,**kwargs):
     if label in CONSTANTS and args==() and kwargs=={}:
@@ -262,6 +264,12 @@ def formula(formula):
         FORMULAS[formula]=_build_formula(_parse_formula(formula))
     return FORMULAS[formula]
 
+def axiom(axiom):
+    global AXIOMS
+    if axiom not in AXIOMS:
+        AXIOMS[axiom]=formula(axiom)
+    return AXIOMS[axiom]
+
 def _compute_feed_dict(feed_dict):
     """ Maps constant and variable string in feed_dict 
         to their tensors """
@@ -278,54 +286,62 @@ def _compute_feed_dict(feed_dict):
 SESSION=None
 OPTIMIZER=None
 KNOWLEDGEBASE=None
-def initialize_knowledgebase(keep_session=True,
-    optimizer=None,
-    formula_aggregator=lambda *x: tf.reduce_mean(tf.concat(x,axis=0)),
-    initial_sat_level_threshold=0.0,
-    track_sat_levels=100,
-    max_trials=10000,
-    feed_dict={}):
-    global SESSION,OPTIMIZER,KNOWLEDGEBASE
 
-    if FORMULAS == {}:
-        raise Exception("No formulas defined.")
+def initialize_session():
+    global SESSION
 
-    logging.getLogger(__name__).info("Initializing knowledgebase")
-    KNOWLEDGEBASE=formula_aggregator(*FORMULAS.values())
-    
-    logging.getLogger(__name__).info("Initializing optimizer")
-    if optimizer is None:
-        OPTIMIZER = tf.train.GradientDescentOptimizer(learning_rate=0.1)
-    else:
-        OPTIMIZER=optimizer
-
-    OPTIMIZER=OPTIMIZER.minimize(-KNOWLEDGEBASE)
-
-    logging.getLogger(__name__).info("Assembling feed dict")
-    _feed_dict=_compute_feed_dict(feed_dict)
     logging.getLogger(__name__).info("Initializing Tensorflow session")
     SESSION = tf.Session()
-    init = tf.global_variables_initializer()
-    SESSION.run(init)
-    sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
-    i=0
-    for i in range(max_trials):
-        SESSION.run(init,feed_dict=_feed_dict)
-        sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
-        if  initial_sat_level_threshold is not None and sat_level >= initial_sat_level_threshold:
-            break
-        if track_sat_levels is not None and i % track_sat_levels == 0:
-            logging.getLogger(__name__).info("INITIALIZE %s sat level -----> %s" % (i,sat_level))
-    logging.getLogger(__name__).info("INITIALIZED with sat level = %s" % (sat_level))
+    if tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
+        init = tf.global_variables_initializer()
+        SESSION.run(init)
 
+def initialize_knowledgebase(optimizer=None,
+    formula_aggregator=lambda *x: tf.reduce_mean(tf.concat(x,axis=0)) if x else None,
+    initial_sat_level_threshold=0.0,
+    track_sat_levels=10,
+    max_trials=100,
+    feed_dict={}):
+    global OPTIMIZER,KNOWLEDGEBASE
+
+    
+    if AXIOMS.values():
+        logging.getLogger(__name__).info("Initializing knowledgebase")
+        KNOWLEDGEBASE=formula_aggregator(*AXIOMS.values()) 
+    else:
+        logging.getLogger(__name__).info("No axioms. Skipping knowledgebase aggregation")
+    
+    initialize_session()
+    
+    # if there are variables to optimize
+    if tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) and KNOWLEDGEBASE is not None:
+        
+        logging.getLogger(__name__).info("Initializing optimizer")
+        OPTIMIZER = optimizer or tf.train.GradientDescentOptimizer(learning_rate=0.1)
+        OPTIMIZER=OPTIMIZER.minimize(-KNOWLEDGEBASE)
+
+        logging.getLogger(__name__).info("Assembling feed dict")
+        _feed_dict=_compute_feed_dict(feed_dict)
+    
+        init = tf.global_variables_initializer()
+        sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
+        i=0
+        for i in range(max_trials):
+            SESSION.run(init,feed_dict=_feed_dict)
+            sat_level = SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
+            if  initial_sat_level_threshold is not None and sat_level >= initial_sat_level_threshold:
+                break
+            if track_sat_levels is not None and i % track_sat_levels == 0:
+                logging.getLogger(__name__).info("INITIALIZE %s sat level -----> %s" % (i,sat_level))
+        logging.getLogger(__name__).info("INITIALIZED with sat level = %s" % (sat_level))
 
 def train(max_epochs=10000,
         track_sat_levels=100,
         sat_level_epsilon=.99,
         feed_dict={}):
     global SESSION,OPTIMIZER,KNOWLEDGEBASE
-    if SESSION is None or OPTIMIZER is None:        
-        raise Exception("Knowledgebase not initialized.")
+    if SESSION is None:
+        raise Exception("Session not initialized. Please run initialize_knowledgebase first.")
 
     _feed_dict=_compute_feed_dict(feed_dict)
     for i in range(max_epochs):

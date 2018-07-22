@@ -29,15 +29,15 @@ ltnw.predicate("close",2,ltnl.equal_euclidian)
 
 ## define the theory
 print("defining the theory T")
-ltnw.formula("forall ?x: %s" % "|".join(["C_%s(?x)" % i for i in range(nr_of_clusters)]))
+ltnw.axiom("forall ?x: %s" % "|".join(["C_%s(?x)" % i for i in range(nr_of_clusters)]))
 for i in range(nr_of_clusters):
-    ltnw.formula("exists ?x: C_%s(?x)" % i)
-    ltnw.formula("forall ?x,?y: (C_%s(?x) & close(?x,?y)) -> C_%s(?y)" % (i,i))
-    ltnw.formula("forall ?x,?y: (C_%s(?x) & ~close(?x,?y)) -> (%s)" % (i,"|".join(["C_%s(?y)" % j for j in range(nr_of_clusters) if i!=j])))
+    ltnw.axiom("exists ?x: C_%s(?x)" % i)
+    ltnw.axiom("forall ?x,?y: (C_%s(?x) & close(?x,?y)) -> C_%s(?y)" % (i,i))
+    ltnw.axiom("forall ?x,?y: (C_%s(?x) & ~close(?x,?y)) -> (%s)" % (i,"|".join(["C_%s(?y)" % j for j in range(nr_of_clusters) if i!=j])))
     
     for j in range(i+1,nr_of_clusters):
-        ltnw.formula("forall ?x: ~(C_%s(?x) & C_%s(?x))" % (i,j))
-print("\n".join(sorted(ltnw.FORMULAS.keys())))
+        ltnw.axiom("forall ?x: ~(C_%s(?x) & C_%s(?x))" % (i,j))
+print("\n".join(sorted(ltnw.AXIOMS.keys())))
 
 ## initialize and optimize
 ltnw.initialize_knowledgebase(optimizer=tf.train.RMSPropOptimizer(learning_rate=0.1,decay=.9),

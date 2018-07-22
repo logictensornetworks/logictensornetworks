@@ -41,14 +41,14 @@ ltnw.function("first",2,fun_definition=lambda d:d[:,:2])
 ltnw.function("second",2,fun_definition=lambda d:d[:,2:])
 
 print("defining the theory T")
-ltnw.formula("forall ?x: %s" % "|".join(["C_%s(?x)" % i for i in range(nr_of_clusters)]))
+ltnw.axiom("forall ?x: %s" % "|".join(["C_%s(?x)" % i for i in range(nr_of_clusters)]))
 for i in range(nr_of_clusters):
-    ltnw.formula("exists ?x: C_%s(?x)" % i)
-    ltnw.formula("forall ?close_x_y: C_%s(first(?close_x_y)) %% C_%s(second(?close_x_y))" % (i,i))
-    ltnw.formula("forall ?distant_x_y: C_%s(first(?distant_x_y)) %% C_%s(second(?distant_x_y))" % (i,i))
+    ltnw.axiom("exists ?x: C_%s(?x)" % i)
+    ltnw.axiom("forall ?close_x_y: C_%s(first(?close_x_y)) %% C_%s(second(?close_x_y))" % (i,i))
+    ltnw.axiom("forall ?distant_x_y: C_%s(first(?distant_x_y)) %% C_%s(second(?distant_x_y))" % (i,i))
     for j in range(i+1,nr_of_clusters):
-        ltnw.formula("forall ?x: ~(C_%s(?x) & C_%s(?x))" % (i,j))
-print("%s" % "\n".join(ltnw.FORMULAS.keys()))
+        ltnw.axiom("forall ?x: ~(C_%s(?x) & C_%s(?x))" % (i,j))
+print("%s" % "\n".join(ltnw.AXIOMS.keys()))
 
 # initialize the knowledgebase and train
 ltnw.initialize_knowledgebase(optimizer=tf.train.RMSPropOptimizer(learning_rate=0.01,decay=.9),
