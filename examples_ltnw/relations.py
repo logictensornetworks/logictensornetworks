@@ -31,9 +31,6 @@ ltnw.formula("forall ?data_B: ~A(?data_B)")
 ltnw.formula("forall ?data_B: B(?data_B)")
 ltnw.formula("forall ?data_A: ~B(?data_A)")
 
-#ltnw.formula("forall ?data: A(?data) -> ~B(?data)")
-#ltnw.formula("forall ?data: B(?data) -> ~A(?data)")
-
 ltnw.predicate("R_A_A",4)
 ltnw.predicate("R_B_B",4) 
 ltnw.predicate("R_A_B",4)
