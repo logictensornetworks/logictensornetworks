@@ -24,15 +24,6 @@ TERMS={}
 FORMULAS={}
 AXIOMS={}
 
-def _reset():
-    global CONSTANTS,PREDICATES,VARIABLES,FUNCTIONS,TERMS,FORMULAS,AXIOMS
-    CONSTANTS={}
-    PREDICATES={}
-    VARIABLES={}
-    FUNCTIONS={}
-    FORMULAS={}
-    AXIOMS={}
-
 def constant(label,*args,**kwargs):
     if label in CONSTANTS and args==() and kwargs=={}:
         return CONSTANTS[label]
@@ -287,14 +278,28 @@ SESSION=None
 OPTIMIZER=None
 KNOWLEDGEBASE=None
 
-def initialize_session():
+def initialize_tf_variables(all=False):
+    if tf.global_variables():
+        if all:
+            init = tf.global_variables_initializer()
+        else:
+            uninitialized_variable_names=set([v.decode("ascii") for v in SESSION.run(tf.report_uninitialized_variables())])
+            uninitialized_variables=[var for var in tf.global_variables() if var.name.split(":")[0] in uninitialized_variable_names]
+            init=tf.variables_initializer(uninitialized_variables)
+        SESSION.run(init)
+
+def initialize_tf_session():
+    """ initialize tf InteractiveSession. you can call this multiple times 
+        initialize_all_variables -- this will initialize """
     global SESSION
 
+    if SESSION:
+        logging.getLogger(__name__).warn("Closing existing Tensorflow session.")
+        SESSION.close()
+
     logging.getLogger(__name__).info("Initializing Tensorflow session")
-    SESSION = tf.Session()
-    if tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
-        init = tf.global_variables_initializer()
-        SESSION.run(init)
+    SESSION = tf.InteractiveSession()
+    initialize_tf_variables(all=True)
 
 def initialize_knowledgebase(optimizer=None,
     formula_aggregator=lambda *x: tf.reduce_mean(tf.concat(x,axis=0)) if x else None,
@@ -311,11 +316,11 @@ def initialize_knowledgebase(optimizer=None,
     else:
         logging.getLogger(__name__).info("No axioms. Skipping knowledgebase aggregation")
     
-    initialize_session()
+    initialize_tf_session()
     
     # if there are variables to optimize
-    if tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) and KNOWLEDGEBASE is not None:
-        
+    if tf.global_variables() and KNOWLEDGEBASE is not None:
+
         logging.getLogger(__name__).info("Initializing optimizer")
         OPTIMIZER = optimizer or tf.train.GradientDescentOptimizer(learning_rate=0.1)
         OPTIMIZER=OPTIMIZER.minimize(-KNOWLEDGEBASE)
@@ -340,27 +345,32 @@ def train(max_epochs=10000,
         sat_level_epsilon=.99,
         feed_dict={}):
     global SESSION,OPTIMIZER,KNOWLEDGEBASE
-    if SESSION is None:
-        raise Exception("Session not initialized. Please run initialize_knowledgebase first.")
+    if KNOWLEDGEBASE is None:
+        raise Exception("KNOWLEDGEBASE not initialized. Please run initialize_knowledgebase first.")
 
     _feed_dict=_compute_feed_dict(feed_dict)
-    for i in range(max_epochs):
-        sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
-        
-        if track_sat_levels is not None and i % track_sat_levels == 0:
-            logging.getLogger(__name__).info("TRAINING %s sat level -----> %s" % (i,sat_level))
-            # print("TRAINING %s sat level -----> %s" % (i,sat_level))
-        if sat_level_epsilon is not None and sat_level > sat_level_epsilon:
-            break
-        
-        SESSION.run(OPTIMIZER,feed_dict=_feed_dict)
-    logging.getLogger(__name__).info("TRAINING finished after %s epochs with sat level %s" % (i,sat_level))
-    return sat_level
+
+    if tf.global_variables():    
+        for i in range(max_epochs):
+            sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
+            
+            if track_sat_levels is not None and i % track_sat_levels == 0:
+                logging.getLogger(__name__).info("TRAINING %s sat level -----> %s" % (i,sat_level))
+                # print("TRAINING %s sat level -----> %s" % (i,sat_level))
+            if sat_level_epsilon is not None and sat_level > sat_level_epsilon:
+                break
+            
+            SESSION.run(OPTIMIZER,feed_dict=_feed_dict)
+        logging.getLogger(__name__).info("TRAINING finished after %s epochs with sat level %s" % (i,sat_level))
+        return sat_level
+    else:
+        logger.warn("Nothing to optimize/train. Skipping training")
+        return SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
 
 def ask(term_or_formula,feed_dict={}):
     global SESSION
     if SESSION is None:
-        raise Exception("Knowledgebase not initialized.")
+        initialize_tf_session()
     _t = None
     try:
         _t=_build_formula(_parse_formula(term_or_formula))
@@ -376,3 +386,18 @@ def ask(term_or_formula,feed_dict={}):
         _feed_dict=_compute_feed_dict(feed_dict)
 
         return SESSION.run(_t,feed_dict=_feed_dict)
+
+def _reset():
+    global CONSTANTS,PREDICATES,VARIABLES,FUNCTIONS,TERMS,FORMULAS,AXIOMS
+    global KNOWLEDGEBASE,SESSION,OPTIMIZER
+    CONSTANTS={}
+    PREDICATES={}
+    VARIABLES={}
+    FUNCTIONS={}
+    FORMULAS={}
+    AXIOMS={}
+    KNOWLEDGEBASE=None
+    if SESSION:
+        SESSION.close()
+    SESSION=None
+    OPTIMIZER=None

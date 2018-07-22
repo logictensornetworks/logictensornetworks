@@ -40,8 +40,7 @@ class TestBasics(unittest.TestCase):
         self.assertEqual(ltnw._parse_term("a"),"a")
         self.assertEqual(ltnw._parse_term("f(c)"),['f', ['c']])
         
-    def testBuildTerm(self):
-        
+    def testBuildTerm(self):        
         data = numpy.random.uniform([-1,-1],[1,1],(500,2),).astype(numpy.float32)
         ltnw.constant("c",2)
         ltnw.variable("?var",data)
@@ -61,7 +60,6 @@ class TestBasics(unittest.TestCase):
             self.assertRaises(ltnw._build_term(['g', ['?vars']])) # vars not declared
 
     def testParseFormula(self):
-        
         self.assertEqual(ltnw._parse_formula("P(a)"),["P",["a"]])
         self.assertEqual(ltnw._parse_formula("P(a,b)"),["P",["a","b"]])
         self.assertEqual(ltnw._parse_formula("P(f(a))"),["P",[["f",["a"]]]])
@@ -74,7 +72,6 @@ class TestBasics(unittest.TestCase):
         self.assertEqual(ltnw._parse_formula("exists ?a: P(?a)"),['exists', '?a', ['P', ['?a']]])
 
     def testBuildFormula(self):
-        
         data = numpy.random.uniform([-1,-1],[1,1],(500,2),).astype(numpy.float32)
         ltnw.constant("c",[1.,0])
         ltnw.variable("?var",data)
@@ -128,9 +125,24 @@ class TestBasics(unittest.TestCase):
         self.assertIsNotNone(ltnw._build_formula(ltnw._parse_formula("P(c) | P(?var)")))
 
 class TestSimpleExperiments(unittest.TestCase):
+    def setUp(self):
+        ltnw._reset()
 
-    def testSimplePredicateOptimization(self):
+    def testSimplePredicate(self):
+        import tensorflow
         
+        nr_samples=100
+
+        ltnw.constant("a",[2.,3.])
+        ltnw.variable("?data_A",numpy.random.uniform([0.,0.],[.1,1.],(nr_samples,2)).astype("float32"))
+        
+        mu=tensorflow.constant([2.,3.])
+        ltnw.predicate("A",2,pred_definition=lambda x: tensorflow.exp(-tensorflow.norm(tensorflow.subtract(x,mu),axis=1)));       
+        
+        self.assertEqual(ltnw.ask("A(a)"),1.)
+        self.assertGreater(ltnw.ask("forall ?data_A: A(?data_A)"),0.)
+        
+    def testSimplePredicateOptimization(self):
         nr_samples=100
 
         ltnw.variable("?data_A",numpy.random.uniform([0.,0.],[.1,1.],(nr_samples,2)).astype("float32"))
