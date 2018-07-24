@@ -42,7 +42,7 @@ def set_tnorm(tnorm):
         def F_Implies(wff1, wff2):
             le_wff1_wff2 = tf.to_float(tf.less_equal(wff1,wff2))
             gt_wff1_wff2 = tf.to_float(tf.greater(wff1,wff2))
-            return le_wff1_wff2 + gt_wff1_wff2*wff2/wff1
+            return tf.cond(tf.equal(wff1[0],0),lambda:le_wff1_wff2 + gt_wff1_wff2*wff2/wff1,lambda:tf.constant([1.0]))
 
 
         def F_Not(wff):
@@ -51,7 +51,7 @@ def set_tnorm(tnorm):
             return 1-wff
 
         def F_Equiv(wff1,wff2):
-            return 1 - tf.square(wff1-wff2)
+            return tf.minimum(wff1/wff2,wff2/wff1)
 
     if tnorm == "mean":
         def F_And(wffs):
@@ -155,7 +155,6 @@ def Equiv(wff1,wff2):
     _, cross_wffs = cross_2args(wff1,wff2)
     label = wff1.name.split(":")[0] + "_IFF_" + wff2.name.split(":")[0]
     result = F_Equiv(cross_wffs[0],cross_wffs[1])
-    result = tf.identity(result,name=label)
     result.doms = cross_wffs[0].doms
     return result
 
@@ -241,6 +240,18 @@ def function(label, input_shape_spec, output_shape_spec=1,fun_definition=None):
     fun.pars = pars
     fun.label=label
     return fun
+
+def proposition(label,initial_value=None,value=None):
+    if value is not None:
+        assert 0 <= value and value <= 1
+        result = tf.constant([value])
+    elif initial_value is not None:
+        assert 0 <= initial_value <= 1
+        result = tf.Variable(initial_value=[value])
+    else:
+        result = tf.expand_dims(tf.clip_by_value(tf.Variable(tf.random_normal(shape=(),mean=.5,stddev=.5)),0.,1.),dim=0)
+    result.doms = ()
+    return result
 
 def predicate(label,number_of_features_or_vars,pred_definition=None):
     global BIAS
