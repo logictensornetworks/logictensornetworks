@@ -387,6 +387,28 @@ def ask(term_or_formula,feed_dict={}):
 
         return SESSION.run(_t,feed_dict=_feed_dict)
 
+def ask_m(terms_or_formulas,feed_dict={}):
+    global SESSION
+    if SESSION is None:
+        initialize_tf_session()
+    _ts=[]
+    for term_or_formula in terms_or_formulas:
+        _t = None
+        try:
+            _t=_build_formula(_parse_formula(term_or_formula))
+        except:
+            pass
+        try:
+            _t=_build_term(_parse_term(term_or_formula))
+        except:
+            pass
+        if _t is None:
+            raise Exception('Could not parse and build term/formula for "%s"' % term_or_formula)
+        else:
+            _ts.append(_t)
+    _feed_dict=_compute_feed_dict(feed_dict)
+    return SESSION.run(_ts,feed_dict=_feed_dict)
+
 def _reset():
     global CONSTANTS,PREDICATES,VARIABLES,FUNCTIONS,TERMS,FORMULAS,AXIOMS
     global KNOWLEDGEBASE,SESSION,OPTIMIZER

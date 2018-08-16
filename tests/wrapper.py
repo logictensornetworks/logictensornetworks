@@ -164,5 +164,11 @@ class TestSimpleExperiments(unittest.TestCase):
         self.assertGreater(ltnw.ask("A(a)")[0],.8)
         self.assertGreater(ltnw.ask("~A(b)")[0],.8)
 
+        result=ltnw.ask_m(["A(a)","~A(b)"])
+        
+        for r in result:
+            self.assertGreater(r[0],.8)
+            self.assertGreater(r[0],.8)
+
 if __name__ == "__main__":
     unittest.main()
