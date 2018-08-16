@@ -352,19 +352,19 @@ def train(max_epochs=10000,
 
     if tf.global_variables():    
         for i in range(max_epochs):
-            sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
-            
             if track_sat_levels is not None and i % track_sat_levels == 0:
+                sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
                 logging.getLogger(__name__).info("TRAINING %s sat level -----> %s" % (i,sat_level))
-                # print("TRAINING %s sat level -----> %s" % (i,sat_level))
-            if sat_level_epsilon is not None and sat_level > sat_level_epsilon:
-                break
+                if sat_level_epsilon is not None and sat_level > sat_level_epsilon:
+                    logging.getLogger(__name__).info("TRAINING finished after %s epochs with sat level %s" % (i,sat_level))
+                    return sat_level
             
             SESSION.run(OPTIMIZER,feed_dict=_feed_dict)
+        sat_level=SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
         logging.getLogger(__name__).info("TRAINING finished after %s epochs with sat level %s" % (i,sat_level))
         return sat_level
     else:
-        logger.warn("Nothing to optimize/train. Skipping training")
+        logging.getLogger(__name__).warn("Nothing to optimize/train. Skipping training")
         return SESSION.run(KNOWLEDGEBASE,feed_dict=_feed_dict)
 
 def ask(term_or_formula,feed_dict={}):
@@ -401,3 +401,4 @@ def _reset():
         SESSION.close()
     SESSION=None
     OPTIMIZER=None
+
