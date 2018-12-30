@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 import tensorflow as tf
 
-LAYERS = 4
 BIAS_factor = 0.0
 BIAS = 0.0
+LAYERS=4
 
 F_And = None
 F_Or = None
@@ -253,7 +253,8 @@ def proposition(label,initial_value=None,value=None):
     result.doms = ()
     return result
 
-def predicate(label,number_of_features_or_vars,pred_definition=None):
+def predicate(label,number_of_features_or_vars,pred_definition=None,layers=None):
+    layers=layers or LAYERS
     global BIAS
     if type(number_of_features_or_vars) is list:
         number_of_features = sum([int(v.shape[1]) for v in number_of_features_or_vars])
@@ -265,17 +266,17 @@ def predicate(label,number_of_features_or_vars,pred_definition=None):
         W = tf.matrix_band_part(
             tf.Variable(
                 tf.random_normal(
-                    [LAYERS,
+                    [layers,
                      number_of_features + 1,
                      number_of_features + 1],mean=0,stddev=1), name="W" + label), 0, -1)
-        u = tf.Variable(tf.ones([LAYERS, 1]),
+        u = tf.Variable(tf.ones([layers, 1]),
                         name="u" + label)
         def apply_pred(*args):
             app_label = label + "/" + "_".join([arg.name.split(":")[0] for arg in args]) + "/"
             tensor_args = tf.concat(args,axis=1)
             X = tf.concat([tf.ones((tf.shape(tensor_args)[0], 1)),
                            tensor_args], 1)
-            XW = tf.matmul(tf.tile(tf.expand_dims(X, 0), [LAYERS, 1, 1]), W)
+            XW = tf.matmul(tf.tile(tf.expand_dims(X, 0), [layers, 1, 1]), W)
             XWX = tf.squeeze(tf.matmul(tf.expand_dims(X, 1), tf.transpose(XW, [1, 2, 0])), axis=[1])
             gX = tf.matmul(tf.tanh(XWX), u)
             result = tf.sigmoid(gX, name=app_label)
