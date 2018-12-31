@@ -323,16 +323,16 @@ def cross_2args(X,Y):
     eX_doms = [x for x in X.doms]
     for y in Y_X:
         eX = tf.expand_dims(eX,0)
-        eX_doms.append(y)
+        eX_doms = [y] + eX_doms
     eY = Y
     eY_doms = [y for y in Y.doms]
     for x in X_Y:
-        eY = tf.expand_dims(eY,0)
+        eY = tf.expand_dims(eY,-2)
         eY_doms.append(x)
     perm_eY = []
     for y in eY_doms:
         perm_eY.append(eX_doms.index(y))
-    eY = tf.transpose(eY,perm_eY + [len(perm_eY)])
+    eY = tf.transpose(eY,perm=perm_eY + [len(perm_eY)])
     mult_eX = [1]*(len(eX_doms)+1)
     mult_eY = [1]*(len(eY_doms)+1)
     for i in range(len(mult_eX)-1):
