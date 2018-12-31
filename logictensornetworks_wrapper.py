@@ -24,6 +24,17 @@ TERMS={}
 FORMULAS={}
 AXIOMS={}
 
+def set_tnorm(tnorm):
+    ltn.set_tnorm(tnorm)
+    
+def set_universal_aggreg(aggr):
+    ltn.set_universal_aggreg(aggr)
+
+def set_existential_aggregator(aggr):
+    ltn.set_existential_aggregator(aggr)
+def set_layers(layers):
+    ltn.LAYERS=layers
+
 def constant(label,*args,**kwargs):
     if label in CONSTANTS and args==() and kwargs=={}:
         return CONSTANTS[label]
