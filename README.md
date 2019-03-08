@@ -61,7 +61,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 LTN has been developed thanks to active contributions and discussions with the following people:
 * Alessandro Daniele (FBK)
-* Artur d’Avila Garces (City)
+* Artur d’Avila Garcez (City)
 * Francesco Giannini (UniSiena)
 * Giuseppe Marra (UniSiena)
 * Ivan Donadello (FBK)
