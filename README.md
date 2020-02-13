@@ -35,7 +35,7 @@ Run examples from the project root, e.g. ``python3.6 examples_ltn/multilable_cla
 
 
 ## Papers 
-
+* [Compensating Supervision Incompleteness with Prior Knowledge in Semantic Image Interpretation. Donadello, Ivan, and Luciano Serafini.  International Joint Conference on Neural Networks (IJCNN). IEEE, 2019](https://arxiv.org/abs/1910.00462)
 * [Logic Tensor Networks: Deep Learning and Logical Reasoning from Data and Knowledge, Luciano Serafini and  Artur d'Avila Garcez, Arxiv.org](https://arxiv.org/abs/1606.04422)
 * [Learning and Reasoning with Logic Tensor Networks, Luciano Serafini and Artur d'Avila Garces, Proc. AI*IA 2016](https://link.springer.com/chapter/10.1007/978-3-319-49130-1_25)
 * [Learning and reasoning in logic tensor networks: theory and application to semantic image interpretation, Luciano Serafini, Ivan Donadello, Artur d'Avila Garces, Proc. ACM SAC 2017](https://dl.acm.org/citation.cfm?id=3019642)
