@@ -44,9 +44,7 @@ Run examples from the project root, e.g. ``python3.6 examples_ltn/multilable_cla
 ## Tutorias 
 
 Checkout recent tutorials on Logic Tensor Networks (LTN)
-
-* [IJCNN 2018 tutorial](https://sites.google.com/fbk.eu/ltn/tutorial-ijcnn-2018)
-* [IJCAI 2018 tutorial](https://sites.google.com/fbk.eu/ltn/tutorial-ijcai-2018)
+* [Logic Tensor Networks (LTN) Tutorials on GitHub](https://github.com/logictensornetworks/tutorials)
 
 ## Other resources
 * [What are “Logic Tensor Networks”?, Lucas Buchberger](https://lucas-bechberger.de/2017/11/16/what-are-logic-tensor-networks/)
