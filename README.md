@@ -45,13 +45,13 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 LTN has been developed thanks to active contributions and discussions with the following people (in alphabetical order):
 - Alessandro Daniele (FBK)
-- Artur d’Avila Garces (City)
+- Artur d’Avila Garcez (City)
 - Benedikt Wagner (City)
 - Emile van Krieken (VU Amsterdam)
 - Francesco Giannini (UniSiena)
 - Giuseppe Marra (UniSiena)
 - Ivan Donadello (FBK)
-- Lucas Brukberger (UniOsnabruck)
+- Lucas Bechberger (UniOsnabruck)
 - Luciano Serafini (FBK)
 - Marco Gori (UniSiena)
 - Michael Spranger (Sony AI)
