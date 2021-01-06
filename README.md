@@ -41,10 +41,9 @@ Run examples from the project root, e.g. ``python3.6 examples_ltn/multilable_cla
 * [Learning and reasoning in logic tensor networks: theory and application to semantic image interpretation, Luciano Serafini, Ivan Donadello, Artur d'Avila Garces, Proc. ACM SAC 2017](https://dl.acm.org/citation.cfm?id=3019642)
 * [Logic tensor networks for semantic image interpretation, Ivan Donadello, Luciano Serafini and Artur d'Avila Garces. Proc. IJCAI 2017](https://www.ijcai.org/proceedings/2017/0221.pdf)
 
-## Tutorias 
+## Tutorials 
 
-Checkout recent tutorials on Logic Tensor Networks (LTN)
-* [Logic Tensor Networks (LTN) Tutorials on GitHub](https://github.com/logictensornetworks/tutorials)
+Checkout the tutorials in the corresponding folder.
 
 ## Other resources
 * [What are “Logic Tensor Networks”?, Lucas Buchberger](https://lucas-bechberger.de/2017/11/16/what-are-logic-tensor-networks/)
@@ -59,11 +58,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 LTN has been developed thanks to active contributions and discussions with the following people:
 * Alessandro Daniele (FBK)
-* Artur d’Avila Garces (City)
+* Artur d’Avila Garcez (City)
 * Francesco Giannini (UniSiena)
 * Giuseppe Marra (UniSiena)
 * Ivan Donadello (FBK)
-* Lucas Brukberger (UniOsnabruck)
+* Lucas Bechberger (UniOsnabruck)
 * Luciano Serafini (FBK)
 * Marco Gori (UniSiena)
 * Michael Spranger (Sony CSL)
