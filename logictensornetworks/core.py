@@ -359,7 +359,9 @@ class Wrapper_Quantifier:
             # The result of the aggregation operator in such case is often not defined (e.g. nan).
             # We replace the result with 0.0 if the semantics of the aggregator is exists,
             # or 1.0 if the semantics of the aggregator is forall.
-            non_empty_vars = tf.reduce_sum(tf.cast(mask,tf.int32), axis=aggreg_axes) != 0
+            aggreg_axes_in_mask = [mask.active_doms.index(dom) for dom in aggreg_doms 
+                    if dom in mask.active_doms]
+            non_empty_vars = tf.reduce_sum(tf.cast(mask,tf.int32), axis=aggreg_axes_in_mask) != 0
             empty_semantics = 1. if self.semantics == "forall" else 0
             result = tf.where(
                 non_empty_vars,
