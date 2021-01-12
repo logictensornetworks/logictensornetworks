@@ -28,8 +28,7 @@ class And_Prod:
     def __call__(self,x,y,stable=None):
         stable = self.stable if stable is None else stable
         if stable:
-            x, y = (1-eps)*x+eps, (1-eps)*y+eps
-            # x, y = not_zeros(x), not_zeros(y)
+            x, y = not_zeros(x), not_zeros(y)
         return tf.multiply(x,y)
 class And_Luk:
     def __call__(self,x,y):
@@ -44,8 +43,7 @@ class Or_ProbSum:
     def __call__(self,x,y,stable=None):
         stable = self.stable if stable is None else stable
         if stable:
-            x, y = (1-eps)*x, (1-eps)*y
-            #x, y = not_ones(x), not_ones(y)
+            x, y = not_ones(x), not_ones(y)
         return x + y - tf.multiply(x,y)
 class Or_Luk:
     def __call__(self,x,y):
@@ -58,7 +56,12 @@ class Implies_Godel:
     def __call__(self,x,y):
         return tf.where(tf.less_equal(x,y),tf.ones_like(x),y)
 class Implies_Reichenbach:
-    def __call__(self,x,y):
+    def __init__(self,stable=True):
+        self.stable = stable
+    def __call__(self,x,y,stable=None):
+        stable = self.stable if stable is None else stable
+        if stable:
+            x, y = not_zeros(x), not_ones(y)
         return 1.-x+tf.multiply(x,y)
 class Implies_Goguen:
     def __init__(self,stable=True):
@@ -97,8 +100,7 @@ class Aggreg_pMean:
         p = self.p if p is None else p 
         stable = self.stable if stable is None else stable
         if stable:
-            xs = (1-eps)*xs+eps
-            #xs = not_zeros(xs)
+            xs = not_zeros(xs)
         return tf.pow(tf.reduce_mean(tf.pow(xs,p),axis=axis,keepdims=keepdims),1/p)
 class Aggreg_pMeanError:
     def __init__(self,p=2,stable=True):
@@ -108,6 +110,5 @@ class Aggreg_pMeanError:
         p = self.p if p is None else p
         stable = self.stable if stable is None else stable
         if stable:
-            xs = (1-eps)*xs
-            #xs = not_ones(xs)
+            xs = not_ones(xs)
         return 1.-tf.pow(tf.reduce_mean(tf.pow(1.-xs,p),axis=axis,keepdims=keepdims),1/p)
