@@ -101,8 +101,7 @@ class Predicate(tf.keras.Model):
     def Lambda(cls, lambda_operator):
         """Constructor that takes in argument a lambda function. It is appropriate for small 
         non-trainable mathematical operations that return a value in [0,1]."""
-        model = tf.keras.Sequential()
-        model.add(layers.Lambda(lambda_operator))
+        model = LambdaModel(lambda_operator)
         return cls(model)
 
     @classmethod
@@ -181,9 +180,19 @@ class Function(tf.keras.Model):
     def Lambda(cls, lambda_operator):
         """Constructor that takes in argument a lambda function. It is appropriate for small 
         non-trainable mathematical operations."""
-        model = tf.keras.Sequential()
-        model.add(layers.Lambda(lambda_operator))
+        model = LambdaModel(lambda_operator)
         return cls(model)
+
+class LambdaModel(tf.keras.Model):
+    """ Simple `tf.keras.Model` that implements a lambda layer.
+    Used in `ltn.Predicate.Lambda` and `ltn.Function.Lambda`. 
+    """
+    def __init__(self, lambda_operator):
+        super(LambdaModel, self).__init__()
+        self.lambda_layer = layers.Lambda(lambda_operator)
+    
+    def call(self, inputs):
+        return self.lambda_layer(inputs)
 
 def proposition(truth_value, trainable=False):
     """Returns a rank-0 Tensor with the given truth value, whose output is constrained in [0,1],
