@@ -1,8 +1,30 @@
 # Logic Tensor Networks (LTN)
 
 Logic Tensor Network (LTN) is a neurosymbolic framework that supports querying, learning and reasoning with both rich data and rich abstract knowledge about the world.
-In LTN, one can represent and effectively compute the most important tasks of deep learning with a differentiable first-order logic language, called Real Logic, that naturally incorporates data. 
-LTN formulas (e.g. `∀x(cat(x) → ∃y(partOf(x,y)∧tail(y)))`) can express complex queries, prior knowledge to satisfy during learning, statements to prove ...
+LTN uses a differentiable first-order logic language, called Real Logic, to incorporate data and logic. 
+
+![Grounding_illustration](./docs/img/framework_grounding.png)
+
+LTN converts Real Logic formulas (e.g. `∀x(cat(x) → ∃y(partOf(x,y)∧tail(y)))`) into [TensorFlow](https://www.tensorflow.org/) computational graphs.
+Such formulas can express complex queries about the data, prior knowledge to satisfy during learning, statements to prove ...
+
+![Computational_graph_illustration](./docs/img/framework_computational_graph.png)
+
+One can represent and effectively compute the most important tasks of deep learning. Examples of such tasks are classification, regression, clustering, or link prediction.
+The ["Getting Started"](#getting-started) section of the README links to tutorials and examples of LTN code.
+
+[[Paper]](https://arxiv.org/pdf/2012.13635.pdf)
+```
+@misc{badreddine2021logic,
+      title={Logic Tensor Networks}, 
+      author={Samy Badreddine and Artur d'Avila Garcez and Luciano Serafini and Michael Spranger},
+      year={2021},
+      eprint={2012.13635},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI}
+}
+```
+
 
 ## Installation
 
@@ -47,6 +69,11 @@ The tutorials are implemented using jupyter notebooks.
 - The [Smokes Friends Cancer](https://nbviewer.jupyter.org/github/logictensornetworks/logictensornetworks/blob/master/examples/smokes_friends_cancer/smokes_friends_cancer.ipynb) example is a classical link prediction problem of Statistical Relational Learning where LTN learns embeddings for individuals based on fuzzy groundtruths and first-order constraints.
 
 The examples are presented with both jupyter notebooks and Python scripts.
+
+![Querying with LTN](./docs/img/framework_querying.png)
+
+![Learning with LTN](./docs/img/framework_learning.png)
+
 
 ## License
 
