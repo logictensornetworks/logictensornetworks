@@ -329,7 +329,7 @@ class Wrapper_Connective:
         return result
 
 class Wrapper_Quantifier:
-    """Class to wrap binary connective operators to use them within ltn formulas.
+    """Class to wrap quantification operators (forall, exists) to use them within ltn formulas.
 
     LTN suppports universal and existential quantification. They are grounded using aggregation operators. 
     We have implemented some common aggregators using tensorflow primitives in `ltn.fuzzy_ops`.
@@ -345,7 +345,7 @@ class Wrapper_Quantifier:
         self._aggreg_op = aggreg_op
         if semantics not in ["forall","exists"]:
             raise ValueError("The semantics for the quantifier should be \"forall\" or \"exists\".")
-        self.semantics = semantics
+        self.fill_value = 1. if semantics == "forall" else 0
     
     def __call__(self, variables, wff, mask_vars=None, mask_fn=None, **kwargs):
         """
@@ -356,7 +356,7 @@ class Wrapper_Quantifier:
         if mask_fn is not None and mask_vars is not None:
             # create and apply the mask
             wff, mask = compute_mask(wff, mask_vars, mask_fn, aggreg_doms)
-            ragged_wff = tf.ragged.boolean_mask(wff, mask)
+            ragged_wff = tf.ragged.boolean_mask(wff, tf.cast(mask,tf.bool))
             # aggregate
             aggreg_axes = [wff.active_doms.index(dom) for dom in aggreg_doms]
             result = self._aggreg_op(ragged_wff, aggreg_axes, **kwargs)
@@ -371,11 +371,10 @@ class Wrapper_Quantifier:
             aggreg_axes_in_mask = [mask.active_doms.index(dom) for dom in aggreg_doms 
                     if dom in mask.active_doms]
             non_empty_vars = tf.reduce_sum(tf.cast(mask,tf.int32), axis=aggreg_axes_in_mask) != 0
-            empty_semantics = 1. if self.semantics == "forall" else 0
             result = tf.where(
                 non_empty_vars,
                 result,
-                empty_semantics
+                self.fill_value
             )
         else:
             aggreg_axes = [wff.active_doms.index(dom) for dom in aggreg_doms]
@@ -383,6 +382,56 @@ class Wrapper_Quantifier:
         result.active_doms = [dom for dom in wff.active_doms if dom not in aggreg_doms]    
         undiag(*variables)
         return result
+
+class Wrapper_AggregateFunction:
+    """Class to wrap aggregate function operators (sum, std, ...) to use them within ltn formulas.
+
+    The wrapper allows to use the operators with LTN formulas. 
+    It takes care of selecting the tensor dimensions to aggregate, given some variables in arguments.
+    Additionally, boolean conditions (`mask_fn`,`mask_vars`) can be used for guarded aggregation.
+
+    Attributes:
+        _aggreg_op: The original aggregation operator.
+    """
+    def __init__(self, aggreg_op, fill_value=None):
+        self._aggreg_op = aggreg_op
+        self.fill_value = fill_value
+    
+    def __call__(self, variables, wff, mask_vars=None, mask_fn=None, **kwargs):
+        """
+        mask_fn(mask_vars)
+        """
+        variables = [variables] if not isinstance(variables,(list,tuple)) else variables
+        aggreg_doms = set([var.active_doms[0] for var in variables])
+        if mask_fn is not None and mask_vars is not None:
+            # create and apply the mask
+            wff, mask = compute_mask(wff, mask_vars, mask_fn, aggreg_doms)
+            ragged_wff = tf.ragged.boolean_mask(wff, tf.cast(mask,tf.bool))
+            # aggregate
+            aggreg_axes = [wff.active_doms.index(dom) for dom in aggreg_doms]
+            result = self._aggreg_op(ragged_wff, aggreg_axes, **kwargs)
+            if type(result) is tf.RaggedTensor:
+                result = result.to_tensor()
+            if self.fill_value is not None:
+                # For some values in the tensor, the mask can result in aggregating with empty variables.
+                #    e.g. forall X ( exists Y:condition(X,Y) ( p(X,Y) ) )
+                #       For some values of X, there may be no Y satisfying the condition
+                # The result of the aggregation operator in such case is often not defined (e.g. nan).
+                aggreg_axes_in_mask = [mask.active_doms.index(dom) for dom in aggreg_doms 
+                        if dom in mask.active_doms]
+                non_empty_vars = tf.reduce_sum(tf.cast(mask,tf.int32), axis=aggreg_axes_in_mask) != 0
+                result = tf.where(
+                    non_empty_vars,
+                    result,
+                    self.fill_value
+                )
+        else:
+            aggreg_axes = [wff.active_doms.index(dom) for dom in aggreg_doms]
+            result = self._aggreg_op(wff, axis=aggreg_axes, **kwargs)
+        result.active_doms = [dom for dom in wff.active_doms if dom not in aggreg_doms]    
+        undiag(*variables)
+        return result
+
 
 def compute_mask(wff, mask_vars, mask_fn, aggreg_doms):
     # 1. cross wff with args that are in the mask but not yet in the formula
