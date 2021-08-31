@@ -69,10 +69,10 @@ logits_model = MLP(4)
 p = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model,single_label=False))
 
 # Constants to index the classes
-class_male = ltn.constant(0)
-class_female = ltn.constant(1)
-class_blue = ltn.constant(2)
-class_orange = ltn.constant(3)
+class_male = ltn.Constant(0, trainable=False)
+class_female = ltn.Constant(1, trainable=False)
+class_blue = ltn.Constant(2, trainable=False)
+class_orange = ltn.Constant(3, trainable=False)
 
 
 # ### Axioms
@@ -94,13 +94,15 @@ Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2),semantics="
 
 formula_aggregator = ltn.fuzzy_ops.Aggreg_pMeanError(p=2)
 
+formula_aggregator = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError(p=2))
+
 @tf.function
 def axioms(features,labels_sex,labels_color):
-    x = ltn.variable("x",features)
-    x_blue = ltn.variable("x_blue",features[labels_color=="B"])
-    x_orange = ltn.variable("x_orange",features[labels_color=="O"])
-    x_male = ltn.variable("x_blue",features[labels_sex=="M"])
-    x_female = ltn.variable("x_blue",features[labels_sex=="F"])
+    x = ltn.Variable("x",features)
+    x_blue = ltn.Variable("x_blue",features[labels_color=="B"])
+    x_orange = ltn.Variable("x_orange",features[labels_color=="O"])
+    x_male = ltn.Variable("x_blue",features[labels_sex=="M"])
+    x_female = ltn.Variable("x_blue",features[labels_sex=="F"])
     axioms = [
         Forall(x_blue, p([x_blue,class_blue])),
         Forall(x_orange, p([x_orange,class_orange])),
@@ -109,15 +111,14 @@ def axioms(features,labels_sex,labels_color):
         Forall(x,Not(And(p([x,class_blue]),p([x,class_orange])))),
         Forall(x,Not(And(p([x,class_male]),p([x,class_female]))))
     ]
-    axioms = tf.stack(axioms)
-    sat_level = formula_aggregator(axioms)
-    return sat_level, axioms
+    sat_level = formula_aggregator(axioms).tensor
+    return sat_level
 
 
 # Initialize all layers and the static graph.
 
-for features, labels_sex, labels_color in ds_test:
-    print("Initial sat level %.5f"%axioms(features,labels_sex,labels_color)[0])
+for features, labels_sex, labels_color in ds_train:
+    print("Initial sat level %.5f"%axioms(features,labels_sex,labels_color))
     break
 
 
@@ -147,19 +148,22 @@ metrics_dict = {
 }
 
 @tf.function()
-def phi1(features):
-    x = ltn.variable("x",features)
-    return Forall(x, Implies(p([x,class_blue]),Not(p([x,class_orange]))),p=5)
+def sat_phi1(features):
+    x = ltn.Variable("x",features)
+    phi1 = Forall(x, Implies(p([x,class_blue]),Not(p([x,class_orange]))),p=5)
+    return phi1.tensor
 
 @tf.function()
-def phi2(features):
-    x = ltn.variable("x",features)
-    return Forall(x, Implies(p([x,class_blue]),p([x,class_orange])),p=5)
+def sat_phi2(features):
+    x = ltn.Variable("x",features)
+    phi2 = Forall(x, Implies(p([x,class_blue]),p([x,class_orange])),p=5)
+    return phi2.tensor
 
 @tf.function()
-def phi3(features):
-    x = ltn.variable("x",features)
-    return Forall(x, Implies(p([x,class_blue]),p([x,class_male])),p=5)
+def sat_phi3(features):
+    x = ltn.Variable("x",features)
+    phi3 = Forall(x, Implies(p([x,class_blue]),p([x,class_male])),p=5)
+    return phi3.tensor
 
 def multilabel_hamming_loss(y_true, y_pred, threshold=0.5,from_logits=False):
     if from_logits:
@@ -170,12 +174,13 @@ def multilabel_hamming_loss(y_true, y_pred, threshold=0.5,from_logits=False):
     nonzero = tf.cast(tf.math.count_nonzero(y_true-y_pred,axis=-1),tf.float32)
     return nonzero/y_true.get_shape()[-1]
 
+
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 @tf.function
 def train_step(features, labels_sex, labels_color):
     # sat and update
     with tf.GradientTape() as tape:
-        sat = axioms(features, labels_sex, labels_color)[0]
+        sat = axioms(features, labels_sex, labels_color)
         loss = 1.-sat
     gradients = tape.gradient(loss, p.trainable_variables)
     optimizer.apply_gradients(zip(gradients, p.trainable_variables))
@@ -192,14 +197,11 @@ def train_step(features, labels_sex, labels_color):
 @tf.function
 def test_step(features, labels_sex, labels_color):
     # sat
-    sat_kb = axioms(features, labels_sex, labels_color)[0]
+    sat_kb = axioms(features, labels_sex, labels_color)
     metrics_dict['test_sat_kb'](sat_kb)
-    sat_phi1 = phi1(features)
-    metrics_dict['test_sat_phi1'](sat_phi1)
-    sat_phi2 = phi2(features)
-    metrics_dict['test_sat_phi2'](sat_phi2)
-    sat_phi3 = phi3(features)
-    metrics_dict['test_sat_phi3'](sat_phi3)
+    metrics_dict['test_sat_phi1'](sat_phi1(features))
+    metrics_dict['test_sat_phi2'](sat_phi2(features))
+    metrics_dict['test_sat_phi3'](sat_phi3(features))
     # accuracy
     predictions = logits_model(features)
     labels_male = (labels_sex == "M")

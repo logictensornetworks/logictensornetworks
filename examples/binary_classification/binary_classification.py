@@ -47,25 +47,24 @@ Implies = ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach())
 Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2),semantics="forall")
 Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(p=2),semantics="exists")
 
-formula_aggregator = ltn.fuzzy_ops.Aggreg_pMeanError(p=2)
+formula_aggregator = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError(p=2))
 
 @tf.function
 def axioms(data, labels):
-    x_A = ltn.variable("x_A",data[labels])
-    x_not_A = ltn.variable("x_not_A",data[tf.logical_not(labels)])
+    x_A = ltn.Variable("x_A",data[labels])
+    x_not_A = ltn.Variable("x_not_A",data[tf.logical_not(labels)])
     axioms = [
         Forall(x_A, A(x_A)),
         Forall(x_not_A, Not(A(x_not_A)))
     ]
-    axioms = tf.stack(axioms)
-    sat_level = formula_aggregator(axioms)
-    return sat_level, axioms
+    sat_level = formula_aggregator(axioms).tensor
+    return sat_level
 
 
 # Initialize all layers and the static graph.
 
-for data, labels in ds_test:
-    print("Initial sat level %.5f"%axioms(data, labels)[0])
+for _data, _labels in ds_test:
+    print("Initial sat level %.5f"%axioms(_data, _labels))
     break
 
 # # Training
@@ -84,7 +83,7 @@ optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 def train_step(data, labels):
     # sat and update
     with tf.GradientTape() as tape:
-        sat = axioms(data, labels)[0]
+        sat = axioms(data, labels)
         loss = 1.-sat
     gradients = tape.gradient(loss, A.trainable_variables)
     optimizer.apply_gradients(zip(gradients, A.trainable_variables))
@@ -96,7 +95,7 @@ def train_step(data, labels):
 @tf.function
 def test_step(data, labels):
     # sat and update
-    sat = axioms(data, labels)[0]
+    sat = axioms(data, labels)
     metrics_dict['test_sat'](sat)
     # accuracy
     predictions = A.model(data)

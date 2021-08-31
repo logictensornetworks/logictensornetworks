@@ -41,7 +41,8 @@ ds_test = tf.data.Dataset.from_tensor_slices((x[330:],y[330:])).batch(batch_size
 f = ltn.Function.MLP(input_shapes=[6],output_shape=[1],hidden_layer_sizes=(8,8))
 # Equality Predicate
 eq = ltn.Predicate.Lambda(
-    lambda args: tf.exp(-0.05*tf.sqrt(tf.reduce_sum(tf.square(args[0]-args[1]),axis=1)))        
+    #lambda args: tf.exp(-0.05*tf.sqrt(tf.reduce_sum(tf.square(args[0]-args[1]),axis=1)))        
+    lambda args: 1/(1+0.5*tf.sqrt(tf.reduce_sum(tf.square(args[0]-args[1]),axis=1)))
 )
 
 # Operators and axioms
@@ -53,8 +54,8 @@ Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2),semantics="
 Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(p=2),semantics="exists")
 @tf.function
 def axioms(x_data, y_data):
-    x = ltn.variable("x", x_data)
-    y = ltn.variable("y", y_data)
+    x = ltn.Variable("x", x_data)
+    y = ltn.Variable("y", y_data)
     return Forall(ltn.diag(x,y), eq([f(x),y]))
 
 # Initialize all layers and the static graph

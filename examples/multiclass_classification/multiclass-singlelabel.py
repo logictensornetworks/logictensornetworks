@@ -1,7 +1,5 @@
 import logging; logging.basicConfig(level=logging.INFO)
 import tensorflow as tf
-import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import logictensornetworks as ltn
 import argparse
@@ -58,9 +56,9 @@ p = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model,single_label=Tru
 
 
 # Constants to index/iterate on the classes
-class_A = ltn.constant(0)
-class_B = ltn.constant(1)
-class_C = ltn.constant(2)
+class_A = ltn.Constant(0, trainable=False)
+class_B = ltn.Constant(1, trainable=False)
+class_C = ltn.Constant(2, trainable=False)
 
 
 # Operators and axioms
@@ -70,24 +68,24 @@ Or = ltn.Wrapper_Connective(ltn.fuzzy_ops.Or_ProbSum())
 Implies = ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach())
 Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2),semantics="forall")
 
-formula_aggregator = ltn.fuzzy_ops.Aggreg_pMeanError(p=2)
+formula_aggregator = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError(p=2))
+
 @tf.function
 def axioms(features, labels, training=False):
-    x_A = ltn.variable("x_A",features[labels==0])
-    x_B = ltn.variable("x_B",features[labels==1])
-    x_C = ltn.variable("x_C",features[labels==2])
+    x_A = ltn.Variable("x_A",features[labels==0])
+    x_B = ltn.Variable("x_B",features[labels==1])
+    x_C = ltn.Variable("x_C",features[labels==2])
     axioms = [
         Forall(x_A,p([x_A,class_A],training=training)),
         Forall(x_B,p([x_B,class_B],training=training)),
         Forall(x_C,p([x_C,class_C],training=training))
     ]
-    axioms = tf.stack(axioms)
-    sat_level = formula_aggregator(axioms)
-    return sat_level, axioms
+    sat_level = formula_aggregator(axioms).tensor
+    return sat_level
 
 # Initialize all layers and the static graph
 for features, labels in ds_train:
-    print("Initial sat level %.5f"%axioms(features,labels)[0])
+    print("Initial sat level %.5f"%axioms(features,labels))
     break
 
 
@@ -114,11 +112,11 @@ optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 def train_step(features, labels):
     # sat and update
     with tf.GradientTape() as tape:
-        sat = axioms(features, labels, training=True)[0]
+        sat = axioms(features, labels, training=True)
         loss = 1.-sat
     gradients = tape.gradient(loss, p.trainable_variables)
     optimizer.apply_gradients(zip(gradients, p.trainable_variables))
-    sat = axioms(features, labels)[0] # calculate sat without dropout
+    sat = axioms(features, labels) # compute sat without dropout
     metrics_dict['train_sat_kb'](sat)
     # accuracy
     predictions = logits_model(features)
@@ -127,7 +125,7 @@ def train_step(features, labels):
 @tf.function
 def test_step(features, labels):
     # sat
-    sat = axioms(features, labels)[0]
+    sat = axioms(features, labels)
     metrics_dict['test_sat_kb'](sat)
     # accuracy
     predictions = logits_model(features)

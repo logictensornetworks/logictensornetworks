@@ -1,6 +1,5 @@
 import argparse
 import tensorflow as tf
-from tensorflow.keras import layers
 import logictensornetworks as ltn
 import baselines, data, commons
 import argparse
@@ -40,10 +39,10 @@ ds_train, ds_test = data.get_mnist_op_dataset(
 logits_model = baselines.SingleDigit()
 Digit = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model))
 ### Variables
-d1 = ltn.variable("digits1", range(10))
-d2 = ltn.variable("digits2", range(10))
-d3 = ltn.variable("digits3", range(10))
-d4 = ltn.variable("digits4", range(10))
+d1 = ltn.Variable("digits1", range(10))
+d2 = ltn.Variable("digits2", range(10))
+d3 = ltn.Variable("digits3", range(10))
+d4 = ltn.Variable("digits4", range(10))
 ### Operators
 Not = ltn.Wrapper_Connective(ltn.fuzzy_ops.Not_Std())
 And = ltn.Wrapper_Connective(ltn.fuzzy_ops.And_Prod())
@@ -51,15 +50,22 @@ Or = ltn.Wrapper_Connective(ltn.fuzzy_ops.Or_ProbSum())
 Implies = ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach())
 Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(),semantics="forall")
 Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(),semantics="exists")
-### Axioms
+
+# mask
+add = ltn.Function.Lambda(lambda inputs: inputs[0]+inputs[1])
+times = ltn.Function.Lambda(lambda inputs: inputs[0]*inputs[1])
+ten = ltn.Constant(10, trainable=False)
+equals = ltn.Predicate.Lambda(lambda inputs: inputs[0] == inputs[1])
+two_digit_number = lambda inputs : add([times([ten,inputs[0]]), inputs[1] ])
+
 @tf.function
 def axioms(images_x1,images_x2,images_y1,images_y2,labels_z,p_schedule):
-    images_x1 = ltn.variable("x1", images_x1)
-    images_x2 = ltn.variable("x2", images_x2)
-    images_y1 = ltn.variable("y1", images_y1)
-    images_y2 = ltn.variable("y2", images_y2)
-    labels_z = ltn.variable("z", labels_z)
-    return Forall(
+    images_x1 = ltn.Variable("x1", images_x1)
+    images_x2 = ltn.Variable("x2", images_x2)
+    images_y1 = ltn.Variable("y1", images_y1)
+    images_y2 = ltn.Variable("y2", images_y2)
+    labels_z = ltn.Variable("z", labels_z)
+    axiom = Forall(
             ltn.diag(images_x1,images_x2,images_y1,images_y2,labels_z),
             Exists(
                 (d1,d2,d3,d4),
@@ -67,12 +73,13 @@ def axioms(images_x1,images_x2,images_y1,images_y2,labels_z,p_schedule):
                     And(Digit([images_x1,d1]),Digit([images_x2,d2])),
                     And(Digit([images_y1,d3]),Digit([images_y2,d4]))
                 ),
-                mask_vars=[d1,d2,d3,d4,labels_z],
-                mask_fn=lambda vars: tf.equal(10*vars[0]+vars[1]+10*vars[2]+vars[3],vars[4]),
+                mask=equals([labels_z, add([ two_digit_number([d1,d2]), two_digit_number([d3,d4]) ]) ]),
                 p=p_schedule
             ),
-            p=1
+            p=2
         )
+    sat = axiom.tensor
+    return sat
 ### Initialize layers and weights
 x1, x2, y1, y2, z = next(ds_train.as_numpy_iterator())
 axioms(x1, x2, y1, y2, z, 2)

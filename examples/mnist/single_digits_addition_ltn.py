@@ -38,8 +38,8 @@ ds_train, ds_test = data.get_mnist_op_dataset(
 logits_model = baselines.SingleDigit()
 Digit = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model))
 ### Variables
-d1 = ltn.variable("digits1", range(10))
-d2 = ltn.variable("digits2", range(10))
+d1 = ltn.Variable("digits1", range(10))
+d2 = ltn.Variable("digits2", range(10))
 ### Operators
 Not = ltn.Wrapper_Connective(ltn.fuzzy_ops.Not_Std())
 And = ltn.Wrapper_Connective(ltn.fuzzy_ops.And_Prod())
@@ -47,23 +47,34 @@ Or = ltn.Wrapper_Connective(ltn.fuzzy_ops.Or_ProbSum())
 Implies = ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach())
 Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(),semantics="forall")
 Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(),semantics="exists")
+
+
+# mask
+add = ltn.Function.Lambda(lambda inputs: inputs[0]+inputs[1])
+equals = ltn.Predicate.Lambda(lambda inputs: inputs[0] == inputs[1])
+
 ### Axioms
 @tf.function
 def axioms(images_x, images_y, labels_z, p_schedule=tf.constant(2.)):
-    images_x = ltn.variable("x", images_x)
-    images_y = ltn.variable("y", images_y)
-    labels_z = ltn.variable("z", labels_z)
-    return Forall(
+    images_x = ltn.Variable("x", images_x)
+    images_y = ltn.Variable("y", images_y)
+    labels_z = ltn.Variable("z", labels_z)
+    axiom = Forall(
             ltn.diag(images_x,images_y,labels_z),
             Exists(
                 (d1,d2),
                 And(Digit([images_x,d1]),Digit([images_y,d2])),
-                mask_vars=[d1,d2,labels_z],
-                mask_fn=lambda vars: tf.equal(vars[0]+vars[1],vars[2]),
+                mask=equals([add([d1,d2]), labels_z]),
                 p=p_schedule
             ),
             p=2
         )
+    sat = axiom.tensor
+    return sat
+
+# Initialize all layers
+images_x, images_y, labels_z = next(ds_train.as_numpy_iterator())
+axioms(images_x, images_y, labels_z)
 
 """ TRAINING """
 

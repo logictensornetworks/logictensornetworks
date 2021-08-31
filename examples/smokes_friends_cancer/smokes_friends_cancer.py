@@ -20,8 +20,8 @@ csv_path = args['csv_path']
 
 embedding_size = 10
 
-g1 = {l:ltn.constant(np.random.uniform(low=0.0,high=1.0,size=embedding_size),trainable=True) for l in 'abcdefgh'}
-g2 = {l:ltn.constant(np.random.uniform(low=0.0,high=1.0,size=embedding_size),trainable=True) for l in 'ijklmn'}
+g1 = {l:ltn.Constant(np.random.uniform(low=0.0,high=1.0,size=embedding_size),trainable=True) for l in 'abcdefgh'}
+g2 = {l:ltn.Constant(np.random.uniform(low=0.0,high=1.0,size=embedding_size),trainable=True) for l in 'ijklmn'}
 g = {**g1,**g2}
 
 Smokes = ltn.Predicate.MLP([embedding_size],hidden_layer_sizes=(16,16))
@@ -40,7 +40,7 @@ Implies = ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach())
 Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2),semantics="forall")
 Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(p=6),semantics="exists")
 
-formula_aggregator = ltn.fuzzy_ops.Aggreg_pMeanError()
+formula_aggregator = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError())
 
 # defining the theory
 @tf.function
@@ -49,28 +49,28 @@ def axioms(p_exists):
     NOTE: we update the embeddings at each step
         -> we should re-compute the variables.
     """
-    p = ltn.variable("p",tf.stack(list(g.values())))
-    q = ltn.variable("q",tf.stack(list(g.values())))
+    p = ltn.Variable.from_constants("p",list(g.values()))
+    q = ltn.Variable.from_constants("q",list(g.values()))
     axioms = []
     # Friends: knowledge incomplete in that
     #     Friend(x,y) with x<y may be known
     #     but Friend(y,x) may not be known
 
-    axioms.append(formula_aggregator(tf.stack(
-            [Friends([g[x],g[y]]) for (x,y) in friends])))
-    axioms.append(formula_aggregator(tf.stack(
+    axioms.append(formula_aggregator(
+            [Friends([g[x],g[y]]) for (x,y) in friends]))
+    axioms.append(formula_aggregator(
             [Not(Friends([g[x],g[y]])) for x in g1 for y in g1 if (x,y) not in friends and x<y ]+\
-            [Not(Friends([g[x],g[y]])) for x in g2 for y in g2 if (x,y) not in friends and x<y ])))
+            [Not(Friends([g[x],g[y]])) for x in g2 for y in g2 if (x,y) not in friends and x<y ]))
     # Smokes: knowledge complete
-    axioms.append(formula_aggregator(tf.stack(
-            [Smokes(g[x]) for x in smokes])))
-    axioms.append(formula_aggregator(tf.stack(
-            [Not(Smokes(g[x])) for x in g if x not in smokes])))
+    axioms.append(formula_aggregator(
+            [Smokes(g[x]) for x in smokes]))
+    axioms.append(formula_aggregator(
+            [Not(Smokes(g[x])) for x in g if x not in smokes]))
     # Cancer: knowledge complete in g1 only
-    axioms.append(formula_aggregator(tf.stack(
-            [Cancer(g[x]) for x in cancer])))
-    axioms.append(formula_aggregator(tf.stack(
-            [Not(Cancer(g[x])) for x in g1 if x not in cancer])))
+    axioms.append(formula_aggregator(
+            [Cancer(g[x]) for x in cancer]))
+    axioms.append(formula_aggregator(
+            [Not(Cancer(g[x])) for x in g1 if x not in cancer]))
     # friendship is anti-reflexive
     axioms.append(Forall(p,Not(Friends([p,p])),p=5))
     # friendship is symmetric
@@ -83,12 +83,11 @@ def axioms(p_exists):
     axioms.append(Forall(p,Implies(Smokes(p),Cancer(p))))
     axioms.append(Forall(p,Implies(Not(Smokes(p)),Not(Cancer(p)))))
     # computing sat_level
-    axioms = tf.stack([tf.squeeze(ax) for ax in axioms])
-    sat_level = formula_aggregator(axioms)
-    return sat_level, axioms
+    sat_level = formula_aggregator(axioms).tensor
+    return sat_level
 
 # Initialize all layers and the static graph.
-print("Initial sat level %.5f"%axioms(p_exists=tf.constant(6.))[0])
+print("Initial sat level %.5f"%axioms(p_exists=tf.constant(6.)))
 
 # # Training
 # 
@@ -105,33 +104,36 @@ trainable_variables = \
         Smokes.trainable_variables \
         + Friends.trainable_variables \
         + Cancer.trainable_variables \
-        + list(g.values())
+        + ltn.as_tensors(list(g.values()))
+
 @tf.function
 def train_step(p_exists):
     # sat and update
     with tf.GradientTape() as tape:
-        sat = axioms(p_exists)[0]
+        sat = axioms(p_exists)
         loss = 1.-sat
     gradients = tape.gradient(loss, trainable_variables)
     optimizer.apply_gradients(zip(gradients, trainable_variables))
     metrics_dict['train_sat'](sat)
 
 @tf.function
-def phi1():
-    p = ltn.variable("p",tf.stack(list(g.values())))
-    q = ltn.variable("q",tf.stack(list(g.values())))
-    return Forall(p,Implies(Cancer(p),Smokes(p)),p=5)
+def sat_phi1():
+    p = ltn.Variable.from_constants("p",list(g.values()))
+    q = ltn.Variable.from_constants("q",list(g.values()))
+    phi1 = Forall(p,Implies(Cancer(p),Smokes(p)),p=5)
+    return phi1.tensor
 @tf.function
-def phi2():
-    p = ltn.variable("p",tf.stack(list(g.values())))
-    q = ltn.variable("q",tf.stack(list(g.values())))
-    return Forall((p,q), Implies(Or(Cancer(p),Cancer(q)),Friends([p,q])),p=5)
+def sat_phi2():
+    p = ltn.Variable.from_constants("p",list(g.values()))
+    q = ltn.Variable.from_constants("q",list(g.values()))
+    phi2 = Forall((p,q), Implies(Or(Cancer(p),Cancer(q)),Friends([p,q])),p=5)
+    return phi2.tensor
 
 @tf.function
 def test_step():
     # sat
-    metrics_dict['test_phi1'](phi1())
-    metrics_dict['test_phi2'](phi2())
+    metrics_dict['test_phi1'](sat_phi1())
+    metrics_dict['test_phi2'](sat_phi2())
 
 track_metrics=20
 template = "Epoch {}"
