@@ -1,111 +1,153 @@
+from __future__ import annotations
+from typing import Optional, Union, List, Tuple, Callable, Any
+import pdb
+
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
-import logging
 
-def constant(value, trainable=False):
-    """Returns a Tensor with the same values and contents as feed, that can be used as a ltn constant.
+VarLabel = str
+FloatTensorLike = tf.types.experimental.TensorLike # to update when tf supports better type annotations
+
+class Expression:
+    def __init__(self, tensor: tf.Tensor, free_vars=List[VarLabel]) -> None:
+        self.tensor: tf.Tensor = tensor
+        self.free_vars: List[VarLabel] = free_vars
+
+    def _copy(self) -> Expression:
+        """Copy the expression but point to the same tensor, for gradient tracking."""
+        return Expression(self.tensor, self.free_vars.copy())
     
-    A ltn constant denotes an individual grounded as a tensor in the Real field. 
-    The individual can be pre-defined (data point) or learnable (embedding).
+    def _get_axis_of_free_var(self, free_var: VarLabel) -> int:
+        if free_var not in self.free_vars:
+            raise ValueError("%s is not a free variable occurring in the expression."%free_var)
+        return self.free_vars.index(free_var)
 
-    Args:
-        value: A value to feed in the tensor.
-        trainable: If True, `tf.GradientTapes` automatically watch the ltn constant. Defaults to False.
-    """
-    #if value.dtype != tf.float32:
-    #    logging.getLogger(__name__).info("Casting constant to tf.float32")
-    result = tf.cast(value, tf.float32)
-    if trainable:
-        result = tf.Variable(result, trainable=True)
-    else:
-        result = tf.constant(result)
-    result.active_doms = []
-    return result
+    def _get_dim_of_free_var(self, free_var: VarLabel) -> int: #TODO: Check return type of dim
+        return tf.shape(self.tensor)[self._get_axis_of_free_var(free_var)]
 
-def variable(label, feed):
-    """Returns a Tensor with the same values and contents as feed, that can be used as a ltn variable. 
-    
-    A ltn variable denotes a sequence of individuals.
-    Axis 0 is the batch dimension: if `x` is an `ltn.variable`, `x[0]` gives the first individual,
-    `x[1]` gives the second individual, and so forth, the usual way.
-
-    Args:
-        label: string. In ltn, variables need to be labelled.
-        feed: A value to feed in a constant tensor.
-            Alternatively, a tensor to use as is (with some dynamically added attributes).
-    """
-    if label.startswith("diag"):
-        raise ValueError("Labels starting with diag are reserved.")
-    if isinstance(feed, tf.Tensor):
-        result = feed
-    else:
-        result = tf.constant(feed)
-    #if result.dtype != tf.float32 :
-    #    logging.getLogger(__name__).info("Casting variable to tf.float32")
-    if len(tf.shape(result)) == 1:
-        result = result[:, tf.newaxis]
-    result = tf.cast(result, tf.float32)
-    result.latent_dom = label
-    result.active_doms = [label]
-    return result
-
-class Predicate(tf.keras.Model):
-    """Predicate class for ltn.
-
-    A ltn predicate is a mathematical function (either pre-defined or learnable) that maps
-    from some n-ary domain of individuals to a real from [0,1] that can be interpreted as a truth value.
-    Examples of predicates can be similarity measures, classifiers, etc.
-    
-    Predicates can be defined using any operations in Tensorflow. They can be linear functions, Deep Neural Networks, and so forth.
-
-    An ltn predicate implements a `tf.keras.Model` instance that can "broadcast" ltn terms as follows:
-    1. Evaluating a predicate with one variable of n individuals yields n output values, 
-    where the i-th output value corresponds to the term calculated with the i-th individual.
-    2. Evaluating a predicate with k variables (x1,...,xk) with respectively n1,...,nK 
-    individuals each, yields a result with n1*...*nk values. The result is organized in a tensor 
-    where the first k dimensions can be indexed to retrieve the outcome(s) that correspond to each variable. 
-    The tensor output by a predicate has a dynamically added attribute `active_doms` 
-    that tells which axis corresponds to which variable (using the label of the variable).
-
-    Attributes:
-        model: The wrapped tensorflow model, without the ltn-specific broadcasting. 
-    """
-    def __init__(self, model):
-        """Inits the ltn predicate with the given tf.keras.Model instance, 
-        wrapping it with the broadcasting mechanism."""
-        super(Predicate, self).__init__()
-        self.model = model
-
-    def call(self, inputs, *args, **kwargs):
-        """Encapsulates the "self.model.__call__" to handle the broadcasting.
-        
-        Args:
-            inputs: tensor or list of tensors that are ltn terms (ltn variable, ltn constant or 
-                    output of a ltn functions). 
-        Returns:
-            outputs: tensor of truth values, with dimensions s.t. each variable corresponds to one axis.
-        """
-        if not isinstance(inputs,(list,tuple)):
-            inputs, doms, dims_0 = cross_args([inputs],flatten_dim0=True)
-            inputs = inputs[0]
+    def take(self, free_var: VarLabel, indices: Union[int,List[int]]) -> Expression:
+        """Take elements along the axis that corresponds to `free_var`."""
+        if tf.rank(indices) == 0:
+            remaining_free_vars = [v for v in self.free_vars if v != free_var]
+        elif tf.rank(indices) == 1:
+            remaining_free_vars = self.free_vars.copy()
         else:
-            inputs, doms, dims_0 = cross_args(inputs, flatten_dim0=True)
-        outputs = self.model(inputs, *args, **kwargs)
-        dims_0 = tf.cast(dims_0,tf.int32) # is a fix when dims_0 is an empty list
-        outputs = tf.reshape(outputs, dims_0)
-        outputs = tf.cast(outputs,tf.float32)
-        outputs.active_doms = doms
+            raise ValueError("Give a single indice or a list of indices.")
+        result = self._copy()
+        result.tensor = tf.gather(self.tensor, indices, axis=self._get_axis_of_free_var(free_var))
+        result.free_vars = remaining_free_vars
+        return result
+        
+class Term(Expression):
+    def __init__(self, tensor: tf.Tensor, free_vars) -> None:
+        super().__init__(tensor, free_vars=free_vars)
+
+    def _copy(self) -> Term:
+        return Term(self.tensor, self.free_vars.copy())
+
+class Formula(Expression):
+    def __init__(self, tensor: tf.Tensor, free_vars) -> None:
+        super().__init__(tensor, free_vars=free_vars)
+
+    def _copy(self) -> Formula:
+        return Formula(self.tensor, self.free_vars.copy())
+
+class Variable(Term):
+    def __init__(self, label: VarLabel, values: FloatTensorLike) -> None:
+        for reserved in ["diag","_flat"]:
+            if label.startswith(reserved):
+                raise ValueError("Labels starting with %s are reserved." % reserved)
+        try:
+            tensor = tf.constant(values, dtype=tf.float32)
+        except TypeError:
+            tensor = tf.convert_to_tensor(tf.cast(values,tf.float32), dtype=tf.float32)
+        if len(tensor.shape) == 1: # ensure feature dims
+            tensor = tensor[:, tf.newaxis]
+        free_vars = [label]
+        super().__init__(tensor, free_vars=free_vars)
+        self.label: VarLabel = label
+
+    @classmethod
+    def from_constants(
+            cls: Variable, label: VarLabel, constants: List[Constant], tape: Optional[tf.GradientTape] = None
+        ) -> Variable:
+        if not tape:
+            pass #TODO: Log warning to the user "No tf.GradientTape, LTN cannot verify that the tape is recording"
+        else:
+            if not tape._recording:
+                raise ValueError("The tape is not recording.")
+        dump_values = [0.]
+        variable = cls(label, dump_values)
+        variable.tensor = tf.stack(as_tensors(constants))
+        return variable
+
+class Constant(Term):
+    def __init__(self, value: FloatTensorLike, trainable: bool) -> None:
+        if trainable:
+            tensor = tf.Variable(value, trainable=True, dtype=tf.float32)
+        else:
+            try:
+                tensor = tf.constant(value, dtype=tf.float32)
+            except TypeError:
+                tensor = tf.convert_to_tensor(tf.cast(value,tf.float32), dtype=tf.float32)
+        if len(tensor.shape) == 0: # ensure feature dims
+            tensor = tensor[tf.newaxis]
+        free_vars = []
+        super().__init__(tensor, free_vars=free_vars)
+
+def _flatten_free_dims(
+        exprs: List[Expression], 
+        in_place: bool = False
+    ) -> List[Expression]:
+    if not in_place:
+        exprs = [expr._copy() for expr in exprs]
+    for expr in exprs:
+        non_var_shape = expr.tensor.shape[len(expr.free_vars):]
+        expr.tensor = tf.reshape(expr.tensor, shape=tf.concat([[-1],non_var_shape],axis=0))
+        expr.free_vars = ["_flat_"+"_".join(expr.free_vars)]
+    return exprs
+
+class _Model:
+    def __init__(self, model: tf.keras.Model, with_feature_dims: bool) -> None:
+        self.model: tf.keras.Model = model
+        self.with_feature_dims: bool = with_feature_dims
+    
+    def __call__(self, inputs: Union[Term, List[Term]], *args: Any, **kwargs: Any) -> Expression:
+        if not isinstance(inputs,(list,tuple)):
+            inputs = [inputs]
+            flat_inputs = _flatten_free_dims(inputs)
+            t_outputs = self.model(flat_inputs[0].tensor, *args, **kwargs)
+        else:
+            inputs = broadcast_exprs(inputs)
+            flat_inputs = _flatten_free_dims(inputs)
+            t_outputs = self.model(as_tensors(flat_inputs), *args, **kwargs)
+        free_dims = tf.cast(tf.shape(inputs[0].tensor)[:len(inputs[0].free_vars)],tf.int32)
+        if self.with_feature_dims:
+            t_outputs = tf.reshape(t_outputs, tf.concat([free_dims,tf.shape(t_outputs)[1:]],axis=0))
+        else:
+            t_outputs = tf.reshape(t_outputs, free_dims)
+        t_outputs = tf.cast(t_outputs, tf.float32)
+        outputs = Expression(t_outputs, inputs[0].free_vars)
         return outputs
 
-    @classmethod
-    def Lambda(cls, lambda_operator):
-        """Constructor that takes in argument a lambda function. It is appropriate for small 
-        non-trainable mathematical operations that return a value in [0,1]."""
-        model = LambdaModel(lambda_operator)
-        return cls(model)
+    @property
+    def trainable_variables(self) -> List[tf.Variable]:
+        #TODO: Raise warning when empty, the model should be initialized
+        return self.model.trainable_variables
+
+class Predicate(_Model):
+    def __init__(self, model: tf.keras.Model) -> None:
+        super().__init__(model, with_feature_dims=False)
+
+    def __call__(self, inputs: Union[Term, List[Term]], *args: Any, **kwargs: Any) -> Formula:
+        #TODO: Assert output input types
+        return super().__call__(inputs, *args, **kwargs)
 
     @classmethod
-    def MLP(cls, input_shapes, hidden_layer_sizes=(16,16)):
+    def MLP(cls: Predicate, 
+            input_shapes,
+            hidden_layer_sizes=(16,16)) -> Predicate:
         inputs = [tf.keras.Input(shape) for shape in input_shapes]
         flat_inputs = [layers.Flatten()(x) for x in inputs]
         hidden = layers.Concatenate()(flat_inputs) if len(flat_inputs) > 1 else flat_inputs[0]
@@ -115,297 +157,205 @@ class Predicate(tf.keras.Model):
         model = tf.keras.Model(inputs=inputs, outputs=outputs)
         return cls(model)
 
-class Function(tf.keras.Model):
-    """Function class for LTN.
+    @classmethod
+    def Lambda(cls: Predicate, lambda_operator: Callable) -> Predicate:
+        model = tf_LambdaModel(lambda_operator)
+        return cls(model)
 
-    A ltn function is a mathematical function (pre-defined or learnable) that maps
-    n individuals to one individual in the tensor domain. 
-    Examples of functions can be distance functions, regressors, etc. 
 
-    Functions can be defined using any operations in Tensorflow. 
-    They can be linear functions, Deep Neural Networks, and so forth.
+class Function(_Model):
+    def __init__(self, model: tf.keras.Model) -> None:
+        super().__init__(model, with_feature_dims=True)
 
-    An ltn function implements a `tf.keras.Model` instance that can "broadcast" ltn terms as follows:
-    1. Evaluating a term with one variable of n individuals yields n output values, 
-    where the i-th output value corresponds to the term calculated with the i-th individual.
-    2. Evaluating a term with k variables (x1,...,xk) with respectively n1,...,nK 
-    individuals each, yields a result with n1*...*nk values. The result is organized in a tensor 
-    where the first k dimensions can be indexed to retrieve the outcome(s) that correspond to each variable. 
-    The tensor output by a predicate has a dynamically added attribute `active_doms` 
-    that tells which axis corresponds to which variable (using the label of the variable).
-
-    Attributes:
-        model: The wrapped tensorflow model, without the ltn-specific broadcasting. 
-    """
-    def __init__(self, model):
-        """Inits the ltn function with the given tf.keras.Model instance, 
-        wrapping it with the broadcasting mechanism."""
-        super(Function, self).__init__()
-        self.model = model
-    
-    def call(self, inputs, *args, **kwargs):
-        """Encapsulates the "self.model.__call__" to handle the broadcasting.
-        
-        Args:
-            inputs: tensor or list of tensors that are ltn terms (ltn variable, ltn constant or 
-                    output of a ltn functions). 
-        Returns:
-            outputs: tensor of terms, with dimensions s.t. each variable corresponds to one axis.
-        """
-        if not isinstance(inputs,(list,tuple)):
-            inputs, doms, dims_0 = cross_args([inputs],flatten_dim0=True)
-            inputs = inputs[0]
-        else:
-            inputs, doms, dims_0 = cross_args(inputs, flatten_dim0=True)
-        outputs = self.model(inputs, *args, **kwargs)
-        dims_0 = tf.cast(dims_0,tf.int32) # is a fix when dims_0 is an empty list
-        outputs = tf.reshape(outputs, tf.concat([dims_0,outputs.shape[1::]],axis=0))
-        outputs = tf.cast(outputs,tf.float32)
-        outputs.active_doms = doms
-        return outputs
+    def __call__(self, inputs: Union[Term, List[Term]], *args: Any, **kwargs: Any) -> Term:
+        return super().__call__(inputs, *args, **kwargs)
 
     @classmethod
-    def MLP(cls, input_shapes, output_shape, hidden_layer_sizes=(16,16)):
+    def MLP(cls: Function, 
+            input_shapes, 
+            output_shape, 
+            hidden_layer_sizes = (16,16)) -> Function:
         inputs = [tf.keras.Input(shape) for shape in input_shapes]
         flat_inputs = [layers.Flatten()(x) for x in inputs]
         hidden = layers.Concatenate()(flat_inputs) if len(flat_inputs) > 1 else flat_inputs[0]
         for units in hidden_layer_sizes:
             hidden = layers.Dense(units,activation=tf.nn.elu)(hidden)
-        flat_outputs = layers.Dense(tf.math.reduce_prod(output_shape))(hidden)
+        output_nodes = tf.math.reduce_prod(output_shape)
+        flat_outputs = layers.Dense(output_nodes)(hidden)
         outputs = layers.Reshape(output_shape)(flat_outputs)
         model = tf.keras.Model(inputs=inputs, outputs=outputs)
         return cls(model)
 
     @classmethod
-    def Lambda(cls, lambda_operator):
-        """Constructor that takes in argument a lambda function. It is appropriate for small 
-        non-trainable mathematical operations."""
-        model = LambdaModel(lambda_operator)
+    def Lambda(cls: Function, lambda_operator: Callable) -> Function:
+        model = tf_LambdaModel(lambda_operator)
         return cls(model)
 
-class LambdaModel(tf.keras.Model):
-    """ Simple `tf.keras.Model` that implements a lambda layer.
-    Used in `ltn.Predicate.Lambda` and `ltn.Function.Lambda`. 
-    """
-    def __init__(self, lambda_operator):
-        super(LambdaModel, self).__init__()
+class tf_LambdaModel(tf.keras.Model):
+    """ Simple `tf.keras.Model` that implements a lambda layer."""
+    def __init__(self, lambda_operator: Callable) -> None:
+        super(tf_LambdaModel, self).__init__()
         self.lambda_layer = layers.Lambda(lambda_operator)
     
-    def call(self, inputs):
+    def call(self, inputs: Union[tf.Tensor, List[tf.Tensor]]) -> tf.Tensor:
         return self.lambda_layer(inputs)
 
-def proposition(truth_value, trainable=False):
-    """Returns a rank-0 Tensor with the given truth value, whose output is constrained in [0,1],
-    that can be used as a proposition in ltn formulas.
+class Proposition(Formula):
+    def __init__(self, truth_value: float, trainable: bool) -> None:
+        try:
+            assert 0 <= float(truth_value) <= 1
+        except:
+            raise ValueError("The truth value of a proposition should be a float in [0,1].")
+        if trainable:
+            tensor = tf.Variable(truth_value, 
+                    trainable=True, 
+                    constraint=lambda x: tf.clip_by_value(x, 0., 1.),
+                    dtype=tf.float32)
+        else:
+            tensor = tf.constant(truth_value, dtype=tf.float32)
+        free_vars = []
+        super().__init__(tensor, free_vars=free_vars)
 
-    Args:
-        truth_value: A float in [0,1].
-        trainable: If True, `tf.GradientTapes` automatically watch the ltn constant. Defaults to False.
-    """
-    try:
-        assert 0 <= float(truth_value) <= 1
-    except:
-        raise ValueError("The truth value of a proposition should be a float in [0,1].")
-    if trainable:
-        result = tf.Variable(truth_value, trainable=True, 
-                constraint=lambda x: tf.clip_by_value(x, 0., 1.))
-    else:
-        result = tf.constant(truth_value)
-    if result.dtype != tf.float32:
-        logging.getLogger(__name__).info("Casting proposition to tf.float32")
-        result = tf.cast(result, tf.float32)
-    result.active_doms = []
-    return result
-    
-def diag(*variables):
-    """Sets the given ltn variables for diagonal quantification (no broadcasting between these variables).
-
-    Given 2 (or more) ltn variables, there are scenarios where one wants to express statements about
-    specific pairs (or tuples) only, such that the i-th tuple contains the i-th instances of the variables. 
-    We allow this using `ltn.diag`. 
-    Note: diagonal quantification assumes that the variables have the same number of individuals.
-
-    Given a predicate `P(x,y)` with two variables `x` and `y`,
-    the usual broadcasting followed by an aggregation would compute (in Python pseudo-code):
-        ```
-        for i,x_i in enumerate(x):
-            for j,y_j in enumerate(y):
-                results[i,j]=P(x_i,y_i)
-        aggregate(results)
-        ```
-    In contrast, diagonal quantification would compute:
-        ```
-        for i,(x_i, y_i) in enumerate(zip(x,y)):
-            results[i].append(P(x_i,y_i))
-        aggregate(results)
-        ```
-    Ltn computes only the "zipped" results.
-    """
-    diag_dom = "diag_"+"_".join([var.latent_dom for var in variables])
+def diag(*variables: Variable) -> List[Variable]:
+    diag_label = "diag_"+"_".join([var.label for var in variables])
     for var in variables:
-        var.active_doms = [diag_dom]
+        var.free_vars = [diag_label]
     return variables
 
-def undiag(*variables):
-    """Resets the usual broadcasting strategy for the given ltn variables.
-
-    In practice, `ltn.diag` is designed to be used with quantifiers. 
-    Every quantifier automatically calls `ltn.undiag` after the aggregation is performed, 
-    so that the variables keep their normal behavior outside of the formula.
-
-    Therefore, it is recommended to use `ltn.diag` only in quantified formulas as follows:
-        ```
-        Forall(ltn.diag(x,l), C([x,l]))
-        ```
-    """
+def undiag(*variables: Variable) -> List[Variable]:
     for var in variables:
-        var.active_doms = [var.latent_dom]
+        var.free_vars = [var.label]
     return variables
 
-def get_dim0_of_dom(wff, dom):
-    """Returns the number of values that the domain takes in the expression. 
-    """
-    return tf.shape(wff)[wff.active_doms.index(dom)]
+def as_tensors(expressions: List[Expression]) -> List[tf.Tensor]:
+    return [expr.tensor for expr in expressions]
 
-def cross_args(args, flatten_dim0=False):
-    """
-    ...
-
-    Args:
-        args: list of tensor inputs to arrange. These can be ltn variables, constants,
-            functions, predicates, or any expression built on those.
-        flatten_dim0: if True, .
-    """
-    doms_to_dim0 = {}
-    for arg in args:
-        for dom in arg.active_doms:
-            doms_to_dim0[dom] = get_dim0_of_dom(arg, dom)
-    doms = list(doms_to_dim0.keys())
-    dims0 = list(doms_to_dim0.values())
-    crossed_args = []
-    for arg in args:
-        doms_in_arg = list(arg.active_doms)
-        doms_not_in_arg = list(set(doms).difference(doms_in_arg))
-        for new_dom in doms_not_in_arg:
-            new_idx = len(doms_in_arg)
-            arg = tf.expand_dims(arg, axis=new_idx)
-            arg = tf.repeat(arg, doms_to_dim0[new_dom], axis=new_idx)
-            doms_in_arg.append(new_dom)
-        perm = [doms_in_arg.index(dom) for dom in doms] + list(range(len(doms_in_arg),len(arg.shape)))
-        arg = tf.transpose(arg, perm=perm)
-        arg.active_doms = doms
-        if flatten_dim0:
-            non_doms_shape = arg.shape[len(doms_in_arg)::]
-            arg = tf.reshape(arg, shape=tf.concat([[-1],non_doms_shape],axis=0))
-        crossed_args.append(arg)
-    return crossed_args, doms, dims0
+def broadcast_exprs(
+        exprs: List[Expression], 
+        in_place: bool = False
+    ) -> List[Expression]:
+    # measure dimensions for each free variable
+    free_var_to_dim = {}
+    for expr in exprs:
+        for free_var in expr.free_vars:
+            free_var_to_dim[free_var] = expr._get_dim_of_free_var(free_var)
+    free_vars = list(free_var_to_dim.keys())
+    free_dims = list(free_var_to_dim.values())
+    # broadcast
+    if not in_place:
+        exprs = [expr._copy() for expr in exprs]
+    for expr in exprs:
+        free_vars_in_arg = list(expr.free_vars)
+        free_vars_not_in_arg = list(set(free_vars).difference(free_vars_in_arg))
+        for new_free_var in free_vars_not_in_arg:
+            new_idx = len(free_vars_in_arg)
+            expr.tensor = tf.expand_dims(expr.tensor, axis=new_idx)
+            expr.tensor = tf.repeat(expr.tensor, free_var_to_dim[new_free_var], axis=new_idx)
+            free_vars_in_arg.append(new_free_var)
+        perm = [free_vars_in_arg.index(free_var) for free_var in free_vars] + list(range(len(free_vars_in_arg),len(expr.tensor.shape)))
+        expr.tensor = tf.transpose(expr.tensor, perm=perm)
+        expr.free_vars = free_vars
+    return exprs
 
 class Wrapper_Connective:
-    """Class to wrap binary connective operators to use them within ltn formulas.
-    
-    LTN suppports various logical connectives. They are grounded using fuzzy semantics. 
-    We have implemented some common fuzzy logic operators using tensorflow primitives in `ltn.fuzzy_ops`. 
+    def __init__(self, connective_op: Callable) -> None:
+        self.connective_op = connective_op
 
-    The wrapper ltn.Wrapper_Connective allows to use the operators with LTN formulas. 
-    It takes care of combining sub-formulas that have different variables appearing in them 
-    (the sub-formulas may have different dimensions that need to be "broadcasted").
-
-    Attributes:
-        _connective_op: The original binary connective operator (without broadcasting).
-    """
-    def __init__(self, connective_op):
-        self._connective_op = connective_op
-
-    def __call__(self, *wffs, **kwargs):
-        wffs, doms, _ = cross_args(wffs)
+    def __call__(self, *wffs: Formula, **kwargs: Any) -> Formula:
+        wffs = broadcast_exprs(wffs)
         try:
-            result = self._connective_op(*wffs, **kwargs)
+            t_result = self.connective_op(*as_tensors(wffs), **kwargs)
         except tf.errors.InvalidArgumentError:
-            raise ValueError("Could not connect arguments with shapes [%s] and respective doms [%s]."
+            raise ValueError("Could not connect formulas with shapes [%s] and free variables [%s]."
                 % (', '.join(map(str,[wff.shape for wff in wffs])),
-                ', '.join(map(str,[wff.active_doms for wff in wffs])))
+                ', '.join(map(str,[wff.free_vars for wff in wffs])))
             )
-        result.active_doms = doms
+        result = Formula(t_result, wffs[0].free_vars)
         return result
 
 class Wrapper_Quantifier:
-    """Class to wrap binary connective operators to use them within ltn formulas.
-
-    LTN suppports universal and existential quantification. They are grounded using aggregation operators. 
-    We have implemented some common aggregators using tensorflow primitives in `ltn.fuzzy_ops`.
-
-    The wrapper allows to use the operators with LTN formulas. 
-    It takes care of selecting the tensor dimensions to aggregate, given some variables in arguments.
-    Additionally, boolean conditions (`mask_fn`,`mask_vars`) can be used for guarded quantification.
-
-    Attributes:
-        _aggreg_op: The original aggregation operator.
-    """
-    def __init__(self, aggreg_op, semantics):
-        self._aggreg_op = aggreg_op
+    def __init__(self, aggreg_op: Callable, semantics: str) -> None:
+        self.aggreg_op = aggreg_op
         if semantics not in ["forall","exists"]:
             raise ValueError("The semantics for the quantifier should be \"forall\" or \"exists\".")
         self.semantics = semantics
-    
-    def __call__(self, variables, wff, mask_vars=None, mask_fn=None, **kwargs):
-        """
-        mask_fn(mask_vars)
-        """
-        variables = [variables] if not isinstance(variables,(list,tuple)) else variables
-        aggreg_doms = set([var.active_doms[0] for var in variables])
-        if mask_fn is not None and mask_vars is not None:
-            # create and apply the mask
-            wff, mask = compute_mask(wff, mask_vars, mask_fn, aggreg_doms)
-            ragged_wff = tf.ragged.boolean_mask(wff, mask)
-            # aggregate
-            aggreg_axes = [wff.active_doms.index(dom) for dom in aggreg_doms]
-            result = self._aggreg_op(ragged_wff, aggreg_axes, **kwargs)
-            if type(result) is tf.RaggedTensor:
-                result = result.to_tensor()
-            # For some values in the tensor, the mask can result in aggregating with empty variables.
-            #    e.g. forall X ( exists Y:condition(X,Y) ( p(X,Y) ) )
-            #       For some values of X, there may be no Y satisfying the condition
-            # The result of the aggregation operator in such case is often not defined (e.g. nan).
-            # We replace the result with 0.0 if the semantics of the aggregator is exists,
-            # or 1.0 if the semantics of the aggregator is forall.
-            aggreg_axes_in_mask = [mask.active_doms.index(dom) for dom in aggreg_doms 
-                    if dom in mask.active_doms]
-            non_empty_vars = tf.reduce_sum(tf.cast(mask,tf.int32), axis=aggreg_axes_in_mask) != 0
+
+    def __call__(self, 
+            variables: Union[List[Variable],Variable],
+            wff: Formula,
+            mask: Optional[Expression] = None,
+            **kwargs: Any) -> Formula:
+        variables = [variables] if not isinstance(variables,(list,tuple)) else variables    
+        aggreg_vars = set([var.free_vars[0] for var in variables])
+        if mask is not None:
+            mask = transpose_free_vars(mask, 
+                    new_var_order = [var for var in mask.free_vars if var not in aggreg_vars]   # important to put aggreg dims last,
+                            + [var for var in mask.free_vars if var in aggreg_vars])            # to keep other dims in the ragged result 
+            wff = broadcast_wff_and_mask(wff, mask)
+            mask.tensor = tf.cast(mask.tensor, tf.bool)
+            t_ragged_wff = tf.ragged.boolean_mask(wff.tensor, mask.tensor)
+            aggreg_axes = [wff.free_vars.index(var) for var in aggreg_vars]
+            t_result = self.aggreg_op(t_ragged_wff, aggreg_axes, **kwargs)
+            if isinstance(t_result, tf.RaggedTensor):
+                t_result = t_result.to_tensor()
+            
+            aggreg_axes_in_mask = [mask.free_vars.index(var) for var in aggreg_vars 
+                    if var in mask.free_vars]
+            non_empty_vars = tf.reduce_sum(tf.cast(mask.tensor,tf.int32), axis=aggreg_axes_in_mask) != 0
             empty_semantics = 1. if self.semantics == "forall" else 0
-            result = tf.where(
+            
+            t_result = tf.where(
                 non_empty_vars,
-                result,
+                t_result,
                 empty_semantics
             )
         else:
-            aggreg_axes = [wff.active_doms.index(dom) for dom in aggreg_doms]
-            result = self._aggreg_op(wff, axis=aggreg_axes, **kwargs)
-        result.active_doms = [dom for dom in wff.active_doms if dom not in aggreg_doms]    
+            aggreg_axes = [wff.free_vars.index(var) for var in aggreg_vars]
+            t_result = self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs)
+        free_vars_remaining = [var for var in wff.free_vars if var not in aggreg_vars]
+        result = Formula(t_result, free_vars_remaining)
         undiag(*variables)
         return result
 
-def compute_mask(wff, mask_vars, mask_fn, aggreg_doms):
-    # 1. cross wff with args that are in the mask but not yet in the formula
-    mask_vars_not_in_wff = [var for var in mask_vars if var.active_doms[0] not in wff.active_doms]
-    wff = cross_args([wff]+mask_vars_not_in_wff)[0][0]
-    # 2. set the masked vars on the first axes
-    doms_in_mask = [var.active_doms[0] for var in mask_vars]
-    doms_in_mask_not_aggreg = [dom for dom in doms_in_mask if dom not in aggreg_doms]
-    doms_in_mask_aggreg = [dom for dom in doms_in_mask if dom in aggreg_doms]
-    doms_not_in_mask = [dom for dom in wff.active_doms if dom not in doms_in_mask]
-    new_doms_order = doms_in_mask_not_aggreg + doms_in_mask_aggreg + doms_not_in_mask
-    wff = transpose_doms(wff, new_doms_order)
-    # 3. compute the boolean mask from the masked vars
-    crossed_mask_vars, doms_order_in_mask, dims0 = cross_args(mask_vars, flatten_dim0=True)
-    mask = mask_fn(crossed_mask_vars)
-    mask = tf.reshape(mask, dims0)
-    # 4. shape it according to the var order in wff
-    mask.active_doms = doms_order_in_mask
-    mask = transpose_doms(mask, doms_in_mask_not_aggreg + doms_in_mask_aggreg)
-    return wff, mask
-    
-def transpose_doms(wff, new_doms_order):
-    perm = [wff.active_doms.index(dom) for dom in new_doms_order]
-    wff = tf.transpose(wff, perm)
-    wff.active_doms = new_doms_order
+class Wrapper_Formula_Aggregator:
+    def __init__(self, aggreg_op: Callable) -> None:
+        self.aggreg_op = aggreg_op
+
+    def __call__(self, wffs: List[Expression], **kwargs: Any) -> Expression:
+        for wff in wffs:
+            if wff.free_vars: # list not empty
+                raise ValueError('Some formulas still contain free variables.')
+        t_result = self.aggreg_op(tf.stack(as_tensors(wffs)))
+        result = Formula(t_result, free_vars=[])
+        return result
+
+def broadcast_wff_and_mask(
+        wff: Formula, 
+        mask: Expression
+        ) -> Tuple[Expression,Expression]:
+    """Broadcast the wff to include all vars in mask; put the vars of the mask in the first axes"""
+    wff = wff._copy()
+    # 1. broadcast wff with vars that are in the mask but not yet in the formula
+    mask_vars_not_in_wff = [var for var in mask.free_vars if var not in wff.free_vars]
+    for var in mask_vars_not_in_wff:
+        new_idx = len(wff.free_vars)
+        wff.tensor = tf.expand_dims(wff.tensor, axis=new_idx)
+        wff.tensor = tf.repeat(wff.tensor, mask._get_dim_of_free_var(var), axis=new_idx)
+        wff.free_vars.append(var)
+    # 2. transpose wff so that the masked vars on the first axes
+    vars_not_in_mask = [var for var in wff.free_vars if var not in mask.free_vars]
+    wff = transpose_free_vars(wff, new_var_order=mask.free_vars + vars_not_in_mask)
     return wff
+
+def transpose_free_vars(
+        expr: Expression, 
+        new_var_order: List[VarLabel],
+        in_place: bool = False
+    ) -> Expression:
+    perm = [expr.free_vars.index(var) for var in new_var_order]
+    if not in_place:
+        expr = expr._copy()
+    expr.tensor = tf.transpose(expr.tensor, perm)
+    expr.free_vars = new_var_order
+    return expr
+
