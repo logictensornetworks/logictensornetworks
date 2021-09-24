@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Optional, Union, List, Tuple, Callable, Any
-import pdb
+from typing import Optional, Union, List, Callable, Any
+import warnings
 
 import numpy as np
 import tensorflow as tf
@@ -23,7 +23,7 @@ class Expression:
             raise ValueError("%s is not a free variable occurring in the expression."%free_var)
         return self.free_vars.index(free_var)
 
-    def _get_dim_of_free_var(self, free_var: VarLabel) -> int: #TODO: Check return type of dim
+    def _get_dim_of_free_var(self, free_var: VarLabel) -> tf.Tensor:
         return tf.shape(self.tensor)[self._get_axis_of_free_var(free_var)]
 
     def take(self, free_var: VarLabel, indices: Union[int,List[int]]) -> Expression:
@@ -73,7 +73,9 @@ class Variable(Term):
             cls: Variable, label: VarLabel, constants: List[Constant], tape: Optional[tf.GradientTape] = None
         ) -> Variable:
         if not tape:
-            pass #TODO: Log warning to the user "No tf.GradientTape, LTN cannot verify that the tape is recording"
+            warnings.warn("No instance of %s passed in argument when creating a LTN variable from constants. "\
+                "LTN cannot verify that a tape is recording. If you created the variable within the scope of a tape, "\
+                "or that you don't need to track weights (e.g. non-trainable constants), you can ignore this warning."%tf.GradientTape)
         else:
             if not tape._recording:
                 raise ValueError("The tape is not recording.")
@@ -133,7 +135,10 @@ class _Model:
 
     @property
     def trainable_variables(self) -> List[tf.Variable]:
-        #TODO: Raise warning when empty, the model should be initialized
+        if not self.model.trainable_variables:
+            warnings.warn("The 'trainable_variables' attribute returned an empty list. Make sure that "\
+                    "the weights of the layers in the %s instance have been initialized, "\
+                    "for example by calling the model a first time." % tf.keras.Model)
         return self.model.trainable_variables
 
 class Predicate(_Model):
@@ -141,8 +146,18 @@ class Predicate(_Model):
         super().__init__(model, with_feature_dims=False)
 
     def __call__(self, inputs: Union[Term, List[Term]], *args: Any, **kwargs: Any) -> Formula:
-        #TODO: Assert output input types
-        return super().__call__(inputs, *args, **kwargs)
+        if not isinstance(inputs,(list,tuple)):
+            if not isinstance(inputs, Term):
+                raise TypeError("The input to a LTN Predicate should be instances of %s. "\
+                        "Got an instance of %s instead." % (Term, type(inputs)))
+        else:
+            for x in inputs:
+                if not isinstance(x, Term):
+                    raise TypeError("The input to a LTN Predicate should be instances of %s. "\
+                            "Got an instance of %s instead." % (Term, type(x)))
+        expr = super().__call__(inputs, *args, **kwargs)
+        wff = Formula(expr.tensor, expr.free_vars)
+        return wff
 
     @classmethod
     def MLP(cls: Predicate, 
@@ -168,7 +183,18 @@ class Function(_Model):
         super().__init__(model, with_feature_dims=True)
 
     def __call__(self, inputs: Union[Term, List[Term]], *args: Any, **kwargs: Any) -> Term:
-        return super().__call__(inputs, *args, **kwargs)
+        if not isinstance(inputs,(list,tuple)):
+            if not isinstance(inputs, Term):
+                raise TypeError("The input to a LTN Function should be instances of %s. "\
+                        "Got an instance of %s instead." % (Term, type(inputs)))
+        else:
+            for x in inputs:
+                if not isinstance(x, Term):
+                    raise TypeError("The input to a LTN Function should be instances of %s. "\
+                            "Got an instance of %s instead." % (Term, type(x)))
+        expr = super().__call__(inputs, *args, **kwargs)
+        term = Term(expr.tensor, expr.free_vars)
+        return term
 
     @classmethod
     def MLP(cls: Function, 
@@ -262,6 +288,10 @@ class Wrapper_Connective:
         self.connective_op = connective_op
 
     def __call__(self, *wffs: Formula, **kwargs: Any) -> Formula:
+        for x in wffs:
+            if not isinstance(x, Formula):
+                raise TypeError("The operands of a LTN connective should be instances of %s. \
+                        Got an instance of %s instead." % (Formula, type(x)))
         wffs = broadcast_exprs(wffs)
         try:
             t_result = self.connective_op(*as_tensors(wffs), **kwargs)
@@ -283,11 +313,21 @@ class Wrapper_Quantifier:
     def __call__(self, 
             variables: Union[List[Variable],Variable],
             wff: Formula,
-            mask: Optional[Expression] = None,
+            mask: Optional[Formula] = None,
             **kwargs: Any) -> Formula:
-        variables = [variables] if not isinstance(variables,(list,tuple)) else variables    
+        variables = [variables] if not isinstance(variables,(list,tuple)) else variables
+        for x in variables:
+            if not isinstance(x, Variable):
+                raise TypeError("The quantified variables should be instances of %s. "\
+                        "Got an instance of %s instead." % (Variable, type(x)))
+        if not isinstance(wff, Formula):
+            raise TypeError("The quantified expression should be an instance of %s. "\
+                    "Got an instance of %s instead." % (Formula, type(x)))
         aggreg_vars = set([var.free_vars[0] for var in variables])
         if mask is not None:
+            if not isinstance(mask, Formula):
+                raise TypeError("The mask argument should be an instance of %s. "\
+                        "Got an instance of %s instead." % (Formula, type(mask)))
             mask = transpose_free_vars(mask, 
                     new_var_order = [var for var in mask.free_vars if var not in aggreg_vars]   # important to put aggreg dims last,
                             + [var for var in mask.free_vars if var in aggreg_vars])            # to keep other dims in the ragged result 
@@ -321,7 +361,7 @@ class Wrapper_Formula_Aggregator:
     def __init__(self, aggreg_op: Callable) -> None:
         self.aggreg_op = aggreg_op
 
-    def __call__(self, wffs: List[Expression], **kwargs: Any) -> Expression:
+    def __call__(self, wffs: List[Formula], **kwargs: Any) -> Formula:
         for wff in wffs:
             if wff.free_vars: # list not empty
                 raise ValueError('Some formulas still contain free variables.')
@@ -331,8 +371,8 @@ class Wrapper_Formula_Aggregator:
 
 def broadcast_wff_and_mask(
         wff: Formula, 
-        mask: Expression
-        ) -> Tuple[Expression,Expression]:
+        mask: Formula
+        ) -> Formula:
     """Broadcast the wff to include all vars in mask; put the vars of the mask in the first axes"""
     wff = wff._copy()
     # 1. broadcast wff with vars that are in the mask but not yet in the formula

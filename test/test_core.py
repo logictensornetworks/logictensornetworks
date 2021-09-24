@@ -197,12 +197,6 @@ class TestPredicate(unittest.TestCase):
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('x'), self.n_x)
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('y'), self.n_y)
 
-    def test_input_type_check(self):
-        pass
-
-    def test_output_type_check(self):
-        pass
-
 class TestFunction(unittest.TestCase):
     def setUp(self):
         self.c1 = core.Constant([2.1,3],trainable=False)
@@ -608,9 +602,79 @@ class TestGuardedQuantifier(unittest.TestCase):
         expected = np.array([.4,.15,.65,.0])
         self.assertTrue(array_allclose(actual.tensor,expected))
 
-
 class TestDiag(unittest.TestCase):
     pass
 
 class TestInTfFunction(unittest.TestCase):
     pass
+
+class TestTypeCheck(unittest.TestCase):
+    def setUp(self):
+        self.x = core.Variable('x',np.random.rand(3,1))
+        self.y = core.Variable('y',np.random.rand(4,1))
+        self.c = core.Constant([3.], trainable=False)
+        self.f1 = core.Function.MLP(input_shapes=[1],output_shape=[1])
+        self.f2 = core.Function.MLP(input_shapes=[1,1],output_shape=[1])
+        self.p1 = core.Predicate.MLP(input_shapes=[1])
+        self.p2 = core.Predicate.MLP(input_shapes=[1,1])
+        self.q = core.Proposition(0., trainable=False)
+        self.And = core.Wrapper_Connective(fuzzy_ops.And_Prod())
+        self.Not = core.Wrapper_Connective(fuzzy_ops.Not_Std())
+        self.Exists = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Mean(),semantics="exists")
+        self.mask = core.Formula(
+            tf.constant(
+                [[1.,1.,0.,0.],
+                [0.,1.,1.,0.],
+                [0.,0.,1.,0.]]),
+            free_vars=['x','y'])
+
+    def test_predicate(self):
+        try:
+            self.p1(self.x)
+            self.p2([self.x,self.c])
+            self.p1(self.f1(self.x))
+        except TypeError:
+            self.fail("TypeError raised unexpectedly.")
+        with self.assertRaises(TypeError):
+            self.p1(self.x.tensor)
+        with self.assertRaises(TypeError):
+            self.p2([self.x, self.p1(self.x)])
+
+    def test_function(self):
+        try:
+            self.f1(self.x)
+            self.f2([self.x,self.c])
+            self.f1(self.f1(self.x))
+        except TypeError:
+            self.fail("TypeError raised unexpectedly.")
+        with self.assertRaises(TypeError):
+            self.f1(self.x.tensor)
+        with self.assertRaises(TypeError):
+            self.f2([self.x, self.p1(self.x)])
+
+    def test_connective(self):
+        try:
+            self.And(self.p1(self.x),self.q)
+            self.Not(self.p2([self.x,self.c]))
+        except TypeError:
+            self.fail("TypeError raised unexpectedly.")
+        with self.assertRaises(TypeError):
+            self.And(self.q, self.f1(self.x))
+        with self.assertRaises(TypeError):
+            self.Not(self.p1(self.x).tensor)
+
+    def test_quantifier(self):
+        try:
+            self.Exists(self.x,self.p1(self.x))
+            self.Exists((self.x,self.y),self.p2([self.x,self.y]))
+            self.Exists((self.x,self.y),self.p2([self.x,self.y]),mask=self.mask)
+        except TypeError:
+            self.fail("TypeError raised unexpectedly.")
+        with self.assertRaises(TypeError):
+            self.Exists(self.q, self.p1(self.x))
+        with self.assertRaises(TypeError):
+            self.Exists(self.x,self.f1(self.x))
+        with self.assertRaises(TypeError):
+            self.Exists((self.x,self.y),self.p2([self.x,self.y]),mask=self.mask.tensor)
+
+        
