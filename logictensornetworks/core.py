@@ -14,6 +14,9 @@ class Expression:
         self.tensor: tf.Tensor = tensor
         self.free_vars: List[VarLabel] = free_vars
 
+    def __repr__(self) -> str:
+        return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, free_vars={self.free_vars})"
+
     def _copy(self) -> Expression:
         """Copy the expression but point to the same tensor, for gradient tracking."""
         return Expression(self.tensor, self.free_vars.copy())
@@ -68,6 +71,9 @@ class Variable(Term):
         super().__init__(tensor, free_vars=free_vars)
         self.label: VarLabel = label
 
+    def __repr__(self) -> str:
+        return f"ltn.{self.__class__.__name__}(label={self.label}, tensor={self.tensor}, free_vars={self.free_vars})"
+
     @classmethod
     def from_constants(
             cls: Variable, label: VarLabel, constants: List[Constant], tape: Optional[tf.GradientTape] = None
@@ -86,7 +92,8 @@ class Variable(Term):
 
 class Constant(Term):
     def __init__(self, value: FloatTensorLike, trainable: bool) -> None:
-        if trainable:
+        self._trainable = trainable
+        if self._trainable:
             tensor = tf.Variable(value, trainable=True, dtype=tf.float32)
         else:
             try:
@@ -97,6 +104,29 @@ class Constant(Term):
             tensor = tensor[tf.newaxis]
         free_vars = []
         super().__init__(tensor, free_vars=free_vars)
+
+    def __repr__(self) -> str:
+        return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, free_vars={self.free_vars})"
+
+class Proposition(Formula):
+    def __init__(self, truth_value: float, trainable: bool) -> None:
+        try:
+            assert 0 <= float(truth_value) <= 1
+        except:
+            raise ValueError("The truth value of a proposition should be a float in [0,1].")
+        self._trainable = trainable
+        if self._trainable:
+            tensor = tf.Variable(truth_value, 
+                    trainable=True, 
+                    constraint=lambda x: tf.clip_by_value(x, 0., 1.),
+                    dtype=tf.float32)
+        else:
+            tensor = tf.constant(truth_value, dtype=tf.float32)
+        free_vars = []
+        super().__init__(tensor, free_vars=free_vars)
+
+    def __repr__(self) -> str:
+        return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, free_vars={self.free_vars})"
 
 def _flatten_free_dims(
         exprs: List[Expression], 
@@ -225,22 +255,6 @@ class tf_LambdaModel(tf.keras.Model):
     
     def call(self, inputs: Union[tf.Tensor, List[tf.Tensor]]) -> tf.Tensor:
         return self.lambda_layer(inputs)
-
-class Proposition(Formula):
-    def __init__(self, truth_value: float, trainable: bool) -> None:
-        try:
-            assert 0 <= float(truth_value) <= 1
-        except:
-            raise ValueError("The truth value of a proposition should be a float in [0,1].")
-        if trainable:
-            tensor = tf.Variable(truth_value, 
-                    trainable=True, 
-                    constraint=lambda x: tf.clip_by_value(x, 0., 1.),
-                    dtype=tf.float32)
-        else:
-            tensor = tf.constant(truth_value, dtype=tf.float32)
-        free_vars = []
-        super().__init__(tensor, free_vars=free_vars)
 
 def diag(*variables: Variable) -> List[Variable]:
     diag_label = "diag_"+"_".join([var.label for var in variables])
