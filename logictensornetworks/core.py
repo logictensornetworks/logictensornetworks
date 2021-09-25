@@ -10,7 +10,7 @@ VarLabel = str
 FloatTensorLike = tf.types.experimental.TensorLike # to update when tf supports better type annotations
 
 class Expression:
-    def __init__(self, tensor: tf.Tensor, free_vars=List[VarLabel]) -> None:
+    def __init__(self, tensor: tf.Tensor, free_vars: List[VarLabel]) -> None:
         self.tensor: tf.Tensor = tensor
         self.free_vars: List[VarLabel] = free_vars
 
@@ -43,14 +43,14 @@ class Expression:
         return result
         
 class Term(Expression):
-    def __init__(self, tensor: tf.Tensor, free_vars) -> None:
+    def __init__(self, tensor: tf.Tensor, free_vars: List[VarLabel]) -> None:
         super().__init__(tensor, free_vars=free_vars)
 
     def _copy(self) -> Term:
         return Term(self.tensor, self.free_vars.copy())
 
 class Formula(Expression):
-    def __init__(self, tensor: tf.Tensor, free_vars) -> None:
+    def __init__(self, tensor: tf.Tensor, free_vars: List[VarLabel]) -> None:
         super().__init__(tensor, free_vars=free_vars)
 
     def _copy(self) -> Formula:
