@@ -349,7 +349,7 @@ class Wrapper_Quantifier:
             mask.tensor = tf.cast(mask.tensor, tf.bool)
             t_ragged_wff = tf.ragged.boolean_mask(wff.tensor, mask.tensor)
             aggreg_axes = [wff.free_vars.index(var) for var in aggreg_vars]
-            t_result = self.aggreg_op(t_ragged_wff, aggreg_axes, **kwargs)
+            t_result = self.aggreg_op(t_ragged_wff, axis=aggreg_axes, **kwargs)
             if isinstance(t_result, tf.RaggedTensor):
                 t_result = t_result.to_tensor()
             
