@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setup(
     name='ltn',
-    version='0.9',
+    version='2.0',
     packages=find_packages(include=['ltn']),
     install_requires=[
         'tensorflow',
