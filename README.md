@@ -10,6 +10,8 @@ Such formulas can express complex queries about the data, prior knowledge to sat
 
 ![Computational_graph_illustration](./docs/img/framework_computational_graph.png)
 
+![Grounding_a_sentence](./docs/img/framework_sentence.png)
+
 One can represent and effectively compute the most important tasks of deep learning. Examples of such tasks are classification, regression, clustering, or link prediction.
 The ["Getting Started"](#getting-started) section of the README links to tutorials and examples of LTN code.
 
@@ -38,9 +40,9 @@ Following are the dependencies we used for development (similar versions should 
 
 ## Repository structure
 
-- `logictensornetworks/core.py` -- core system for defining constants, variables, predicates, functions and formulas,
-- `logictensornetworks/fuzzy_ops.py` -- a collection of fuzzy logic operators defined using Tensorflow primitives,
-- `logictensornetworks/utils.py` -- a collection of useful functions,
+- `ltn/core.py` -- core system for defining constants, variables, predicates, functions and formulas,
+- `ltn/fuzzy_ops.py` -- a collection of fuzzy logic operators defined using Tensorflow primitives,
+- `ltn/utils.py` -- a collection of useful functions,
 - `tutorials/` -- tutorials to start with LTN,
 - `examples/` -- various problems approached using LTN,
 - `tests/` -- tests.

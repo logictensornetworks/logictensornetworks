@@ -1,6 +1,6 @@
 import argparse
 import tensorflow as tf
-import logictensornetworks as ltn
+import ltn
 import baselines, data, commons
 import argparse
 

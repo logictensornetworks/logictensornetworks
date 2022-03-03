@@ -1,8 +1,6 @@
 import logging; logging.basicConfig(level=logging.INFO)
 import tensorflow as tf
-import numpy as np
-import matplotlib.pyplot as plt
-import logictensornetworks as ltn
+import ltn
 import pandas as pd
 import argparse
 

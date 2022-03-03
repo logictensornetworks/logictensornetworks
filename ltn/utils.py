@@ -1,4 +1,4 @@
-import logictensornetworks as ltn
+import ltn
 import tensorflow as tf
 
 def Pred_equal_strict():

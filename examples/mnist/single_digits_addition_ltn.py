@@ -1,7 +1,7 @@
 import argparse
 import tensorflow as tf
 from tensorflow.keras import layers
-import logictensornetworks as ltn
+import ltn
 import baselines, data, commons
 import argparse
 

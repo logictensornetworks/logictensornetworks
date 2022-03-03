@@ -4,8 +4,8 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-from logictensornetworks import core
-from logictensornetworks import fuzzy_ops
+from ltn import core
+from ltn import fuzzy_ops
 
 def array_allclose(actual,desired):
     try:

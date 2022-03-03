@@ -65,6 +65,8 @@ class Variable(Term):
             tensor = tf.constant(values, dtype=tf.float32)
         except TypeError:
             tensor = tf.convert_to_tensor(tf.cast(values,tf.float32), dtype=tf.float32)
+        if len(tensor.shape) == 0:
+            raise ValueError("LTN Variables must be list of values. The given values are not iterable.")
         if len(tensor.shape) == 1: # ensure feature dims
             tensor = tensor[:, tf.newaxis]
         free_vars = [label]
