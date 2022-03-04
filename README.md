@@ -15,7 +15,7 @@ Such formulas can express complex queries about the data, prior knowledge to sat
 One can represent and effectively compute the most important tasks of deep learning. Examples of such tasks are classification, regression, clustering, or link prediction.
 The ["Getting Started"](#getting-started) section of the README links to tutorials and examples of LTN code.
 
-[[Paper]](https://arxiv.org/pdf/2012.13635.pdf)
+[[Paper]](https://www.sciencedirect.com/science/article/abs/pii/S0004370221002009) -- [[Preprint]](https://arxiv.org/pdf/2012.13635.pdf)
 ```
 @misc{badreddine2021logic,
       title={Logic Tensor Networks}, 
@@ -30,13 +30,27 @@ The ["Getting Started"](#getting-started) section of the README links to tutoria
 
 ## Installation
 
-Clone the LTN repository and install it using `pip install -e <local project path>`.
+For the latest release version, install via pip
+```
+pip install ltn
+```
+
+For the latest development version, clone the github repository and install it using locally.
+```
+pip install -e <local project path>
+```
 
 Following are the dependencies we used for development (similar versions should run fine):
 - python 3.8
-- tensorflow >= 2.2 (for running the core system)
-- numpy >= 1.18 (for examples)
-- matplotlib >= 3.2 (for examples)
+- tensorflow >= 2.2
+- numpy >= 1.18
+- matplotlib (for examples)
+- pandas (for examples)
+
+### Troubleshooting
+To install on an Apple Silicon machine, you will need [`tensorflow-macos`](https://developer.apple.com/metal/tensorflow-plugin/) instead of `tensorflow`. 
+Use the flag `--no-deps` when installing via pip and take care of the dependencies manually.
+For example, `pip install ltn --no-deps`.
 
 ## Repository structure
 

@@ -12,7 +12,7 @@ setup(
         'numpy'
     ],
     url='https://github.com/logictensornetworks/logictensornetworks',
-    download_url='https://github.com/logictensornetworks/logictensornetworks',
+    download_url='https://github.com/logictensornetworks/logictensornetworks/archive/refs/tags/v2.0.tar.gz',
     license='MIT',
     author='Samy Badreddine',
     author_email='badreddine.samy@gmail.com',
