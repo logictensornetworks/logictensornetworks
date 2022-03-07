@@ -1,12 +1,12 @@
 # Logic Tensor Networks (LTN)
 
 Logic Tensor Network (LTN) is a neurosymbolic framework that supports querying, learning and reasoning with both rich data and rich abstract knowledge about the world.
-LTN uses a differentiable first-order logic language, called Real Logic, to incorporate data and logic. 
+LTN uses a differentiable first-order logic language, called Real Logic, to incorporate data and logic. The figure below describes features of Real Logic.
 
 ![Grounding_illustration](./docs/img/framework_grounding.png)
 
 LTN converts Real Logic formulas (e.g. `∀x(cat(x) → ∃y(partOf(x,y)∧tail(y)))`) into [TensorFlow](https://www.tensorflow.org/) computational graphs.
-Such formulas can express complex queries about the data, prior knowledge to satisfy during learning, statements to prove ...
+Such formulas can express complex queries about the data, prior knowledge to satisfy during learning, statements to prove ... The next two figures describe how Real Logic sentences can represent computational graphs (inputs are on the left, outputs are on the right).
 
 ![Computational_graph_illustration](./docs/img/framework_computational_graph.png)
 
@@ -16,14 +16,19 @@ One can represent and effectively compute the most important tasks of deep learn
 The ["Getting Started"](#getting-started) section of the README links to tutorials and examples of LTN code.
 
 [[Paper]](https://www.sciencedirect.com/science/article/abs/pii/S0004370221002009) -- [[Preprint]](https://arxiv.org/pdf/2012.13635.pdf)
+
+Cite as:
 ```
-@misc{badreddine2021logic,
-      title={Logic Tensor Networks}, 
-      author={Samy Badreddine and Artur d'Avila Garcez and Luciano Serafini and Michael Spranger},
-      year={2021},
-      eprint={2012.13635},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI}
+@article{badreddine2022logic,
+title = {Logic Tensor Networks},
+journal = {Artificial Intelligence},
+volume = {303},
+pages = {103649},
+year = {2022},
+issn = {0004-3702},
+doi = {https://doi.org/10.1016/j.artint.2021.103649},
+author = {Samy Badreddine and Artur {d'Avila Garcez} and Luciano Serafini and Michael Spranger},
+keywords = {Neurosymbolic AI, Deep learning and reasoning, Many-valued logics}
 }
 ```
 
@@ -35,7 +40,7 @@ For the latest release version, install via pip
 pip install ltn
 ```
 
-For the latest development version, clone the github repository and install it using locally.
+For the latest development version, clone the github repository and install it locally.
 ```
 pip install -e <local project path>
 ```
