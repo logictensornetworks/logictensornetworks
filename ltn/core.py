@@ -72,6 +72,7 @@ class Variable(Term):
         free_vars = [label]
         super().__init__(tensor, free_vars=free_vars)
         self.label: VarLabel = label
+        self.locked_diag_label: str = None
 
     def __repr__(self) -> str:
         return f"ltn.{self.__class__.__name__}(label={self.label}, tensor={self.tensor}, free_vars={self.free_vars})"
@@ -259,6 +260,10 @@ class tf_LambdaModel(tf.keras.Model):
         return self.lambda_layer(inputs)
 
 def diag(*variables: Variable) -> List[Variable]:
+    for var in variables:
+        if var.free_vars[0].startswith("diag_"):
+            raise ValueError(f"Trying to diag a variable that is already temporarily"
+                +"diagged: {var.label}.")
     diag_label = "diag_"+"_".join([var.label for var in variables])
     for var in variables:
         var.free_vars = [diag_label]
@@ -266,8 +271,18 @@ def diag(*variables: Variable) -> List[Variable]:
 
 def undiag(*variables: Variable) -> List[Variable]:
     for var in variables:
-        var.free_vars = [var.label]
+        var.free_vars = [var.label] if var.locked_diag_label else [var.label] 
     return variables
+
+def diag_lock(*variables: Variable) -> List[Variable]:
+    for var in variables:
+        if var.free_vars[0].startswith("diag"):
+            raise ValueError(f"Trying to diaglock a variable that is temporarily diagged: "
+                    +"{var.label}.\nCall `diag_lock` on variables when they are undiagged.")
+    diag_label = "diaglock_"+"_".join([var.label for var in variables])
+    for var in variables:
+        var.locked_diag_label = diag_label
+        var.free_vars = [var.locked_diag_label]
 
 def as_tensors(expressions: List[Expression]) -> List[tf.Tensor]:
     return [expr.tensor for expr in expressions]
