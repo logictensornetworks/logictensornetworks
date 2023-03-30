@@ -193,6 +193,21 @@ class Predicate(_Model):
         return wff
 
     @classmethod
+    def FromLogits(cls, logits_model: tf.keras.Model, activation_function: str, 
+            with_class_indexing=False, **kwargs: Any) -> Predicate:
+        """ `with_class_indexing`: If true, must have last axis (-1) for indexing classes.
+        Always true when `activation_function == "softmax"`.
+        """
+        if activation_function == "sigmoid":
+            predicate = cls(_SigmoidTfModel(logits_model, with_class_indexing=with_class_indexing, **kwargs))
+        elif activation_function == "softmax":
+            predicate = cls(_SoftmaxTfModel(logits_model, **kwargs))
+        else:
+            raise ValueError("Computation from logits is implemented only for \"sigmoid\" or \"softmax\".")
+        predicate.logits_model = logits_model
+        return predicate
+
+    @classmethod
     def MLP(cls: Predicate, 
             input_shapes,
             hidden_layer_sizes=(16,16)) -> Predicate:
@@ -275,6 +290,7 @@ def undiag(*variables: Variable) -> List[Variable]:
     return variables
 
 def diag_lock(*variables: Variable) -> List[Variable]:
+    """In place"""
     for var in variables:
         if var.free_vars[0].startswith("diag"):
             raise ValueError(f"Trying to diaglock a variable that is temporarily diagged: "
@@ -430,3 +446,40 @@ def transpose_free_vars(
     expr.free_vars = new_var_order
     return expr
 
+
+class _SigmoidTfModel(tf.keras.Model):
+    def __init__(self, logits_model: tf.keras.Model, with_class_indexing: bool = False, **kwargs: Any) -> None:
+        """ with_class_indexing: If true, must have last axis (-1) for indexing classes.
+        logits_model : must accept list of inputs
+         """
+        super().__init__()
+        self.logits_model = logits_model
+        self.call = self._call_with_class_indexing if with_class_indexing else self._call_without_class_indexing
+
+    def _call_without_class_indexing(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
+        logit = self.logits_model(inputs)
+        truth_degree = tf.math.sigmoid(logit)    
+        return truth_degree
+
+    def _call_with_class_indexing(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
+        """ inputs[-1] are the classes to index """
+        logits_model_inputs, indices = inputs[:-1], inputs[-1]
+        logits = self.logits_model(logits_model_inputs)
+        truth_degrees = tf.math.sigmoid(logits)
+        indices = tf.cast(indices, tf.int32)
+        return tf.gather_nd(truth_degrees, indices, batch_dims=1)
+
+
+class _SoftmaxTfModel(tf.keras.Model):
+    def __init__(self, logits_model: tf.keras.Model, **kwargs: Any) -> None:
+        """ logits_model: Must have last axis for classes, even if only one class. """
+        super().__init__()
+        self.logits_model = logits_model
+        
+    def call(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
+        """ inputs[-1] are the classes to index """
+        logits_model_inputs, indices = inputs[:-1], inputs[-1]
+        logits = self.logits_model(logits_model_inputs)
+        truth_degrees = tf.nn.softmax(logits)
+        indices = tf.cast(indices, tf.int32)
+        return tf.gather_nd(truth_degrees, indices, batch_dims=1)
