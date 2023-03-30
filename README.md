@@ -35,27 +35,20 @@ keywords = {Neurosymbolic AI, Deep learning and reasoning, Many-valued logics}
 
 ## Installation
 
-For the latest release version, install via pip
+For the latest release version, install via pip. To install the core dependencies, run:
 ```
 pip install ltn
 ```
 
-For the latest development version, clone the github repository and install it locally.
+If you need the dependencies used in the examples, run:
+```
+pip install ltn[examples]
+```
+
+For the latest development version, clone the github repository and install it locally (with or without dependency modifier).
 ```
 pip install -e <local project path>
 ```
-
-Following are the dependencies we used for development (similar versions should run fine):
-- python 3.8
-- tensorflow >= 2.2
-- numpy >= 1.18
-- matplotlib (for examples)
-- pandas (for examples)
-
-### Troubleshooting
-To install on an Apple Silicon machine, you will need [`tensorflow-macos`](https://developer.apple.com/metal/tensorflow-plugin/) instead of `tensorflow`. 
-Use the flag `--no-deps` when installing via pip and take care of the dependencies manually.
-For example, `pip install ltn --no-deps`.
 
 ## Repository structure
 
