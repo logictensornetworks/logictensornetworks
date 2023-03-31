@@ -24,14 +24,15 @@ class MNISTConv(tf.keras.Model):
 class SingleDigit(tf.keras.Model):
     """Model classifying one digit image into 10 possible classes. 
     """
-    def __init__(self, hidden_dense_sizes=(84,)):
+    def __init__(self, hidden_dense_sizes=(84,), inputs_as_a_list = False):
         super(SingleDigit, self).__init__()
         self.mnistconv = MNISTConv()
         self.denses = [layers.Dense(s, activation="elu") for s in hidden_dense_sizes]
         self.dense_class = layers.Dense(10)
+        self.inputs_as_a_list = inputs_as_a_list
 
     def call(self, inputs):
-        x = inputs
+        x = inputs if not self.inputs_as_a_list else inputs[0]
         x = self.mnistconv(x)
         for dense in self.denses:
             x = dense(x)

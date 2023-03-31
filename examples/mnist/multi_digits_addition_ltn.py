@@ -36,8 +36,8 @@ ds_train, ds_test = data.get_mnist_op_dataset(
 
 """ LTN MODEL AND LOSS """
 ### Predicates
-logits_model = baselines.SingleDigit()
-Digit = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model))
+logits_model = baselines.SingleDigit(inputs_as_a_list=True)
+Digit = ltn.Predicate.FromLogits(logits_model, activation_function="softmax")
 ### Variables
 d1 = ltn.Variable("digits1", range(10))
 d2 = ltn.Variable("digits2", range(10))
@@ -103,28 +103,27 @@ def train_step(images_x1,images_x2,images_y1,images_y2,labels_z,**kwargs):
     optimizer.apply_gradients(zip(gradients, logits_model.trainable_variables))
     metrics_dict['train_loss'](loss)
     # accuracy
-    predictions_x1 = tf.argmax(logits_model(images_x1),axis=-1)
-    predictions_x2 = tf.argmax(logits_model(images_x2),axis=-1)
-    predictions_y1 = tf.argmax(logits_model(images_y1),axis=-1)
-    predictions_y2 = tf.argmax(logits_model(images_y2),axis=-1)
-    predictions_z = 10*predictions_x1+predictions_x2+10*predictions_y1+predictions_y2
+    predictions_x1 = tf.argmax(logits_model(images_x1),axis=-1, output_type=tf.int32)
+    predictions_x2 = tf.argmax(logits_model(images_x2),axis=-1, output_type=tf.int32)
+    predictions_y1 = tf.argmax(logits_model(images_y1),axis=-1, output_type=tf.int32)
+    predictions_y2 = tf.argmax(logits_model(images_y2),axis=-1, output_type=tf.int32)
+    predictions_z = 10.*predictions_x1+predictions_x2+10.*predictions_y1+predictions_y2
     match = tf.equal(predictions_z,tf.cast(labels_z,predictions_z.dtype))
     metrics_dict['train_accuracy'](tf.reduce_mean(tf.cast(match,tf.float32)))
-    
+
 @tf.function
 def test_step(images_x1,images_x2,images_y1,images_y2,labels_z,**kwargs):
     # loss
     loss = 1.- axioms(images_x1,images_x2,images_y1,images_y2,labels_z,**kwargs)
     metrics_dict['test_loss'](loss)
     # accuracy
-    predictions_x1 = tf.argmax(logits_model(images_x1),axis=-1)
-    predictions_x2 = tf.argmax(logits_model(images_x2),axis=-1)
-    predictions_y1 = tf.argmax(logits_model(images_y1),axis=-1)
-    predictions_y2 = tf.argmax(logits_model(images_y2),axis=-1)
-    predictions_z = 10*predictions_x1+predictions_x2+10*predictions_y1+predictions_y2
+    predictions_x1 = tf.argmax(logits_model(images_x1),axis=-1, output_type=tf.int32)
+    predictions_x2 = tf.argmax(logits_model(images_x2),axis=-1, output_type=tf.int32)
+    predictions_y1 = tf.argmax(logits_model(images_y1),axis=-1, output_type=tf.int32)
+    predictions_y2 = tf.argmax(logits_model(images_y2),axis=-1, output_type=tf.int32)
+    predictions_z = 10.*predictions_x1+predictions_x2+10.*predictions_y1+predictions_y2
     match = tf.equal(predictions_z,tf.cast(labels_z,predictions_z.dtype))
     metrics_dict['test_accuracy'](tf.reduce_mean(tf.cast(match,tf.float32)))
-
 from collections import defaultdict
 
 scheduled_parameters = defaultdict(lambda: {})

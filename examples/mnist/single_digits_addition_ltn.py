@@ -35,8 +35,8 @@ ds_train, ds_test = data.get_mnist_op_dataset(
 
 """ LTN MODEL AND LOSS """
 ### Predicates
-logits_model = baselines.SingleDigit()
-Digit = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model))
+logits_model = baselines.SingleDigit(inputs_as_a_list=True)
+Digit = ltn.Predicate.FromLogits(logits_model, activation_function="softmax")
 ### Variables
 d1 = ltn.Variable("digits1", range(10))
 d2 = ltn.Variable("digits2", range(10))
@@ -95,8 +95,8 @@ def train_step(images_x, images_y, labels_z, **parameters):
     optimizer.apply_gradients(zip(gradients, logits_model.trainable_variables))
     metrics_dict['train_loss'](loss)
     # accuracy
-    predictions_x = tf.argmax(logits_model(images_x),axis=-1)
-    predictions_y = tf.argmax(logits_model(images_y),axis=-1)
+    predictions_x = tf.argmax(logits_model([images_x]),axis=-1)
+    predictions_y = tf.argmax(logits_model([images_y]),axis=-1)
     predictions_z = predictions_x + predictions_y
     match = tf.equal(predictions_z,tf.cast(labels_z,predictions_z.dtype))
     metrics_dict['train_accuracy'](tf.reduce_mean(tf.cast(match,tf.float32)))
@@ -107,8 +107,8 @@ def test_step(images_x, images_y, labels_z, **parameters):
     loss = 1.- axioms(images_x, images_y, labels_z, **parameters)
     metrics_dict['test_loss'](loss)
     # accuracy
-    predictions_x = tf.argmax(logits_model(images_x),axis=-1)
-    predictions_y = tf.argmax(logits_model(images_y),axis=-1)
+    predictions_x = tf.argmax(logits_model([images_x]),axis=-1)
+    predictions_y = tf.argmax(logits_model([images_y]),axis=-1)
     predictions_z = predictions_x + predictions_y
     match = tf.equal(predictions_z,tf.cast(labels_z,predictions_z.dtype))
     metrics_dict['test_accuracy'](tf.reduce_mean(tf.cast(match,tf.float32)))

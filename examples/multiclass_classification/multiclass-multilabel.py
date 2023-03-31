@@ -59,12 +59,12 @@ class MLP(tf.keras.Model):
         self.dense_class = tf.keras.layers.Dense(n_classes)
         
     def call(self, inputs):
-        x = inputs
+        x = inputs[0]
         for dense in self.denses:
             x = dense(x)
         return self.dense_class(x)
 logits_model = MLP(4)
-p = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model,single_label=False))
+p = ltn.Predicate.FromLogits(logits_model, activation_function="sigmoid", with_class_indexing=True)
 
 # Constants to index the classes
 class_male = ltn.Constant(0, trainable=False)
@@ -184,7 +184,7 @@ def train_step(features, labels_sex, labels_color):
     optimizer.apply_gradients(zip(gradients, p.trainable_variables))
     metrics_dict['train_sat_kb'](sat)
     # accuracy
-    predictions = logits_model(features)
+    predictions = logits_model([features])
     labels_male = (labels_sex == "M")
     labels_female = (labels_sex == "F")
     labels_blue = (labels_color == "B")
@@ -201,7 +201,7 @@ def test_step(features, labels_sex, labels_color):
     metrics_dict['test_sat_phi2'](sat_phi2(features))
     metrics_dict['test_sat_phi3'](sat_phi3(features))
     # accuracy
-    predictions = logits_model(features)
+    predictions = logits_model([features])
     labels_male = (labels_sex == "M")
     labels_female = (labels_sex == "F")
     labels_blue = (labels_color == "B")

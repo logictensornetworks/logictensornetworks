@@ -45,14 +45,14 @@ class MLP(tf.keras.Model):
         self.dropout = tf.keras.layers.Dropout(0.2)
         
     def call(self, inputs, training=False):
-        x = inputs
+        x = inputs[0]
         for dense in self.denses:
             x = dense(x)
             x = self.dropout(x, training=training)
         return self.dense_class(x)
 
-logits_model = MLP(4)
-p = ltn.Predicate(ltn.utils.LogitsToPredicateModel(logits_model,single_label=True))
+logits_model = MLP(3)
+p = ltn.Predicate.FromLogits(logits_model, activation_function="softmax", with_class_indexing=True)
 
 
 # Constants to index/iterate on the classes
@@ -71,7 +71,7 @@ Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2),semantics="
 formula_aggregator = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError(p=2))
 
 @tf.function
-def axioms(features, labels, training=False):
+def axioms(features, labels, training=True):
     x_A = ltn.Variable("x_A",features[labels==0])
     x_B = ltn.Variable("x_B",features[labels==1])
     x_C = ltn.Variable("x_C",features[labels==2])
@@ -85,7 +85,7 @@ def axioms(features, labels, training=False):
 
 # Initialize all layers and the static graph
 for features, labels in ds_train:
-    print("Initial sat level %.5f"%axioms(features,labels))
+    print("Initial sat level %.5f"%axioms(features,labels,training=False))
     break
 
 
@@ -106,8 +106,8 @@ metrics_dict = {
 
 
 # Define the training and test step
-
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+
 @tf.function
 def train_step(features, labels):
     # sat and update
@@ -119,16 +119,16 @@ def train_step(features, labels):
     sat = axioms(features, labels) # compute sat without dropout
     metrics_dict['train_sat_kb'](sat)
     # accuracy
-    predictions = logits_model(features)
+    predictions = p.logits_model([features])
     metrics_dict['train_accuracy'](tf.one_hot(labels,3),predictions)
     
 @tf.function
 def test_step(features, labels):
     # sat
-    sat = axioms(features, labels)
+    sat = axioms(features, labels, training=False)
     metrics_dict['test_sat_kb'](sat)
     # accuracy
-    predictions = logits_model(features)
+    predictions = p.logits_model([features])
     metrics_dict['test_accuracy'](tf.one_hot(labels,3),predictions)
 
 

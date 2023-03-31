@@ -469,6 +469,10 @@ class _SigmoidTfModel(tf.keras.Model):
         indices = tf.cast(indices, tf.int32)
         return tf.gather_nd(truth_degrees, indices, batch_dims=1)
 
+    @property
+    def trainable_variables(self) -> list[tf.Variable]:
+        return self.logits_model.trainable_variables
+
 
 class _SoftmaxTfModel(tf.keras.Model):
     def __init__(self, logits_model: tf.keras.Model, **kwargs: Any) -> None:
@@ -483,3 +487,7 @@ class _SoftmaxTfModel(tf.keras.Model):
         truth_degrees = tf.nn.softmax(logits)
         indices = tf.cast(indices, tf.int32)
         return tf.gather_nd(truth_degrees, indices, batch_dims=1)
+    
+    @property
+    def trainable_variables(self) -> list[tf.Variable]:
+        return self.logits_model.trainable_variables
