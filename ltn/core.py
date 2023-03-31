@@ -194,9 +194,40 @@ class Predicate(_Model):
 
     @classmethod
     def FromLogits(cls, logits_model: tf.keras.Model, activation_function: str, 
-            with_class_indexing=False, **kwargs: Any) -> Predicate:
-        """ `with_class_indexing`: If true, must have last axis (-1) for indexing classes.
-        Always true when `activation_function == "softmax"`.
+            with_class_indexing=True, **kwargs: Any) -> Predicate:
+        r"""Constructor from a model that outputs logits.
+
+        A model for a predicate `P` classifying individuals `x` into n classes 
+        `class_1`, ..., `class_n` will likely output n logits using the same
+        hidden layers.
+
+        This constructor allows to easily define a predicate that can be called 
+        using the syntax `P([x,class_i])`.
+
+        Given `logits_model`, the model that outputs logits for `x`, the predicate will:  
+        1. Transform the logits into values in [0,1] using either a sigmoid of softmax activation,
+        2. Return the value at the index `class_i` (if `with_class_indexing` is True).
+
+        An important requirement of `logits_model` is that it must receive 
+        a list of inputs in argument. That is, `logits_model([x])` must work,
+        instead of `logits_model(x)`. This is how the predicate will call it,
+        even if there is a single argument.
+        
+        Args:
+            logits_model (tf.keras.Model): Model that outputs logits. 
+                Is called using a list of inputs (`logits_model([x1,x2,...])`), even if 
+                there is a single input (`logits_model([x])`). 
+            activation_function (str): "sigmoid" or "softmax". For softmax activations, 
+                `with_class_indexing` is considered True.
+            with_class_indexing (bool, optional): In the case of a sigmoid activation, 
+                whether the predicate should support the syntax `P([x,class_i])` (when True),
+                or the syntax `P([x])` (when False). Defaults to True.
+
+        Raises:
+            ValueError: The activation function is not "sigmoid" or "softmax".
+
+        Returns:
+            Predicate: A `Predicate` object that can be called with the syntax `P([x,class_i])`.
         """
         if activation_function == "sigmoid":
             predicate = cls(_SigmoidTfModel(logits_model, with_class_indexing=with_class_indexing, **kwargs))

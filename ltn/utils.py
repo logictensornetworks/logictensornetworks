@@ -1,5 +1,9 @@
-import ltn
+from warnings import warn
+
 import tensorflow as tf
+
+import ltn
+
 
 def Pred_equal_strict():
     """Returns a 2-ary LTN predicate. The predicate returns 1.0 if the inputs are equal, 0.0 otherwise.
@@ -49,6 +53,8 @@ class LogitsToPredicateModel(tf.keras.Model):
         single_label: True for exclusive classes (logits are translated into probabilities using softmax),
                 False for non-exclusive classes (logits are translated into probabilities using sigmoid)
         """
+        warn("`LogitsToPredicateModel` is deprecated. " 
+             "Use `ltn.Predicate.FromLogits` instead.", DeprecationWarning, stacklevel=2)
         super(LogitsToPredicateModel, self).__init__()
         self.logits_model = logits_model
         self.to_probs = tf.nn.softmax if single_label else tf.math.sigmoid
