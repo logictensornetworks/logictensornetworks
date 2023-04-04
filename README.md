@@ -3,6 +3,11 @@
 Logic Tensor Network (LTN) is a neurosymbolic framework that supports querying, learning and reasoning with both rich data and rich abstract knowledge about the world.
 LTN uses a differentiable first-order logic language, called Real Logic, to incorporate data and logic. The figure below describes features of Real Logic.
 
+The [example page](https://github.com/logictensornetworks/logictensornetworks/tree/master/examples) gives a non-exhaustive list of projects that use LTN. 
+Also, check out the [PyTorch implementation](https://github.com/tommasocarraro/LTNtorch).
+
+## Description
+
 ![Grounding_illustration](./docs/img/framework_grounding.png)
 
 LTN converts Real Logic formulas (e.g. `∀x(cat(x) → ∃y(partOf(x,y)∧tail(y)))`) into [TensorFlow](https://www.tensorflow.org/) computational graphs.
@@ -11,9 +16,6 @@ Such formulas can express complex queries about the data, prior knowledge to sat
 ![Computational_graph_illustration](./docs/img/framework_computational_graph.png)
 
 ![Grounding_a_sentence](./docs/img/framework_sentence.png)
-
-One can represent and effectively compute the most important tasks of deep learning. Examples of such tasks are classification, regression, clustering, or link prediction.
-The ["Getting Started"](#getting-started) section of the README links to tutorials and examples of LTN code.
 
 [[Paper]](https://www.sciencedirect.com/science/article/abs/pii/S0004370221002009) -- [[Preprint]](https://arxiv.org/pdf/2012.13635.pdf)
 
@@ -109,3 +111,4 @@ LTN has been developed thanks to active contributions and discussions with the f
 - Michael Spranger (Sony AI)
 - Michelangelo Diligenti (UniSiena)
 - Samy Badreddine (Sony AI)
+- Tommaso Carraro (FBK)
