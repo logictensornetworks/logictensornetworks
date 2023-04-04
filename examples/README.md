@@ -1,13 +1,11 @@
 # Projects using LTN
-A non-exhaustive list of projects that use and/or extend LTN. 
+This folder contains a series of example experiments. They show how the language of Real Logic can be used to specify a number of tasks that involve learning from data and reasoning about logical knowledge. Examples of such tasks are: classification, regression, clustering, link prediction.
+
+Below, we also highlight a list of third-party projects that use and/or extend LTN. 
 If you have a project that can be added to this list, or if you want to make a correction, please create a GitHub issue sharing details about your work or reach out to [badreddine.samy@gmail.com](badreddine.samy@gmail.com).
 
 ### Tutorials
-* Tutorials in the LTN repository:
-    1. [Grounding in LTN part 1](https://nbviewer.jupyter.org/github/logictensornetworks/logictensornetworks/blob/master/tutorials/1-grounding_non_logical_symbols.ipynb): Real Logic, constants, predicates, functions, variables,
-    2. [Grounding in LTN part 2](https://nbviewer.jupyter.org/github/logictensornetworks/logictensornetworks/blob/master/tutorials/2-grounding_connectives.ipynb): connectives and quantifiers (+ [complement](https://nbviewer.jupyter.org/github/logictensornetworks/logictensornetworks/blob/master/tutorials/2b-operators_and_gradients.ipynb): choosing appropriate operators for learning),
-    3. [Learning in LTN](https://nbviewer.jupyter.org/github/logictensornetworks/logictensornetworks/blob/master/tutorials/3-knowledgebase_and_learning.ipynb): using satisfiability of LTN formulas as a training objective,
-    4. [Reasoning in LTN](https://nbviewer.jupyter.org/github/logictensornetworks/logictensornetworks/blob/master/tutorials/4-reasoning.ipynb): measuring if a formula is the logical consequence of a knowledgebase.
+* (on this repository) [Tutorials on LTN Basics](https://github.com/logictensornetworks/logictensornetworks/tree/master/tutorials)
 * [Tutorial on applying the LTN framework to a simplified Clevr dataset](https://github.com/JohannaOttb00782280/Tutorial_LTN_Clevr_like), Ott and Hartwig, 2022
 
 ### Computer Vision
@@ -24,7 +22,7 @@ If you have a project that can be added to this list, or if you want to make a c
 ### Reasoning
 * (on this repository) [Smokes Friends Cancer](https://github.com/logictensornetworks/logictensornetworks/blob/master/examples/smokes_friends_cancer/smokes_friends_cancer.ipynb)
 * (on this repository) [Parents and Ancestor](https://github.com/logictensornetworks/logictensornetworks/blob/master/examples/parent_ancestor/parent_ancestor.ipynb)
-* [On the Capabilities of Logic Tensor Networks for Deductive Reasoning](https://people.cs.ksu.edu/~hitzler/pub2/aaaiss-19.pdf), 
+* [On the Capabilities of Logic Tensor Networks for Deductive Reasoning](https://people.cs.ksu.edu/~hitzler/pub2/aaaiss-19.pdf), Bianchi and Hitzler, 2019
 * [Neural-Symbolic Reasoning Under Open-World and Closed-World Assumptions](https://ceur-ws.org/Vol-3121/paper3.pdf), Wagner and Garcez, 2022
 
 ### Recommender systems
