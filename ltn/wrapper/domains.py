@@ -39,6 +39,12 @@ class Domain:
         if use_map and self.dataset_params.map_fn is not None:
             values = np.array([self.dataset_params.map_fn(vi) for vi in values])
         return values
+
+    def get_values_at_indices(self, indices: np.ndarray, use_map: bool=True) -> np.ndarray:
+        values = tf.gather(self.values, indices, axis=0).numpy()
+        if use_map and self.dataset_params.map_fn is not None:
+            values = np.array([self.dataset_params.map_fn(vi) for vi in values])
+        return values
     
     def set_dataset_params(self, dataset_params: DatasetParams) -> None:
         """In place"""

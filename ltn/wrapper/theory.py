@@ -2,13 +2,13 @@
 from __future__ import annotations
 import dataclasses
 import tensorflow as tf
-import numpy as np
 
 import ltn
 from ltn.wrapper.constraints import Constraint
 from ltn.wrapper.grounding import Grounding
 from ltn.wrapper.domains import Domain, DatasetIterator
 from ltn.utils.logging.base import MetricsLogger
+
 
 @dataclasses.dataclass
 class Theory:
@@ -28,12 +28,17 @@ class Theory:
  
     def train_step_from_domains(
             self,
+            constraints_subset: list[Constraint] = None,
             optimizer: tf.keras.optimizers.Optimizer = None
     ) -> None:
+        if constraints_subset is not None:
+            for constraint in constraints_subset:
+                assert(constraint in self.constraints)
+        constraints = constraints_subset if constraints_subset is not None else self.constraints
         optimizer = optimizer if optimizer else self.optimizer
         with tf.GradientTape() as tape:
-            wffs = [cstr.call_with_domains() for cstr in self.constraints]
-            for (wff, cstr) in zip(wffs, self.constraints):
+            wffs = [cstr.call_with_domains() for cstr in constraints]
+            for (wff, cstr) in zip(wffs, constraints):
                 self.constraint_metrics[cstr.label].update_state(wff.tensor)
             agg_sat = self.formula_aggregator(wffs).tensor
             loss = 1-agg_sat
@@ -50,7 +55,6 @@ class Theory:
         for metric in self.all_metrics:
             for logger in self.metrics_loggers:
                 logger.log_value(metric.name, float(metric.result()), step=self.step)
-
 
     def reset_metrics(self) -> None:
         for metric in self.all_metrics:

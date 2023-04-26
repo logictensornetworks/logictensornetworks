@@ -111,6 +111,10 @@ class Constant(Term):
     def __repr__(self) -> str:
         return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, free_vars={self.free_vars})"
 
+    @property
+    def trainable_variables(self) -> list[tf.Variable]:
+        return [self.tensor] if self._trainable else []
+
 class Proposition(Formula):
     def __init__(self, truth_value: float, trainable: bool) -> None:
         try:
@@ -440,11 +444,17 @@ class Wrapper_Formula_Aggregator:
         self.aggreg_op = aggreg_op
 
     def __call__(self, wffs: List[Formula], **kwargs: Any) -> Formula:
-        for wff in wffs:
-            if wff.free_vars: # list not empty
-                raise ValueError('Some formulas still contain free variables.')
-        t_result = self.aggreg_op(tf.stack(as_tensors(wffs)))
-        result = Formula(t_result, free_vars=[])
+        """Stacks and aggregates a list of formulas. 
+        Commonly used to aggregate the constraints in a knowledge base."""
+        wffs = broadcast_exprs(wffs)
+        try:
+            t_result = self.aggreg_op(tf.stack(as_tensors(wffs)), axis=0, **kwargs)
+        except tf.errors.InvalidArgumentError:
+            raise ValueError("Could not connect formulas with shapes [%s] and free variables [%s]. "
+                % (', '.join(map(str,[wff.tensor.shape for wff in wffs])),
+                ', '.join(map(str,[wff.free_vars for wff in wffs])))
+            )
+        result = Formula(t_result, free_vars=wffs[0].free_vars)
         return result
 
 def broadcast_wff_and_mask(

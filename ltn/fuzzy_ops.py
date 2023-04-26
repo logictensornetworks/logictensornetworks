@@ -159,6 +159,9 @@ class Aggreg_Prod:
         return tf.reduce_prod(xs,axis=axis,keepdims=keepdims)
     
 
+#########################
+# Log-Product Operators #
+#########################
 class Aggreg_LogProd:
     def __init__(self,stable=True):
         warn("`Aggreg_LogProd` outputs values out of the truth value range [0,1]. "
@@ -172,5 +175,13 @@ class Aggreg_LogProd:
             xs=not_zeros(xs)
         return tf.reduce_sum(tf.math.log(xs),axis=axis,keepdims=keepdims)
     
+class Aggreg_Sum:
+    def __init__(self) -> None:
+        warn("`Aggreg_Sum` outputs values out of the truth value range [0,1]. "
+             "Its usage with other connectives could be compromised."
+             "Use it carefully.", UserWarning)
+
+    def __call__(self,xs,axis=None,keepdims=False):
+        return tf.reduce_sum(xs,axis=axis,keepdims=keepdims)
     
 Aggreg_SumLog = Aggreg_LogProd
