@@ -14,11 +14,12 @@ class Grounding:
     variables: dict[str, ltn.Variable] = dataclasses.field(default_factory=dict)
     functions: dict[str, ltn.Function] = dataclasses.field(default_factory=dict)
     predicates: dict[str, ltn.Predicate] = dataclasses.field(default_factory=dict)
+    propositions: dict[str, ltn.Proposition] = dataclasses.field(default_factory=dict)
 
     @property
     def trainable_variables(self) -> list[tf.Variable]:
         return list(itertools.chain(*[x.trainable_variables for x in itertools.chain(self.predicates.values(), 
-                self.functions.values(), self.constants.values())]))
+                self.functions.values(), self.constants.values(), self.propositions.values())]))
 
 
 @dataclasses.dataclass

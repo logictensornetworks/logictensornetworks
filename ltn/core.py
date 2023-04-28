@@ -134,6 +134,10 @@ class Proposition(Formula):
 
     def __repr__(self) -> str:
         return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, free_vars={self.free_vars})"
+    
+    @property
+    def trainable_variables(self) -> list[tf.Variable]:
+        return [self.tensor] if self._trainable else []
 
 def _flatten_free_dims(
         exprs: List[Expression], 
@@ -226,6 +230,7 @@ class Predicate(_Model):
             with_class_indexing (bool, optional): In the case of a sigmoid activation, 
                 whether the predicate should support the syntax `P([x,class_i])` (when True),
                 or the syntax `P([x])` (when False). Defaults to True.
+                Notice that `class_i` are integer indices, and not one hot indices.
 
         Raises:
             ValueError: The activation function is not "sigmoid" or "softmax".
