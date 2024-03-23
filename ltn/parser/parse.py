@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 from pyparsing import (alphanums, alphas, nums, delimitedList, Forward,
             Group, Keyword, Literal, opAssoc, infixNotation, Suppress, Word)
 from functools import reduce
@@ -6,7 +7,7 @@ import dataclasses
 
 import ltn
 from ltn.wrapper.grounding import Grounding, OperatorConfig
-
+from ltn.core import FloatTensorLike
 
 @dataclasses.dataclass
 class OperatorReferences:
@@ -23,6 +24,7 @@ TREE_TAB = 2*" "
 
 @dataclasses.dataclass
 class OpNode:
+    """Parsing node for a logical connective (not, and, or) and its operands."""
     operator: str
     operands: list[AtomNode | OpenFormulaNode | BoundFormulaNode]
 
@@ -36,7 +38,7 @@ class OpNode:
             operand.print_tree(level=level)
 
     def eval(self, grounding: Grounding, op_config: OperatorConfig, **kwargs) -> ltn.Formula:
-        operands = [x.eval(grounding=grounding, op_config=op_config) for x in self.operands]
+        operands = [x.eval(grounding=grounding, op_config=op_config, **kwargs) for x in self.operands]
         # Unary operator
         if self.operator == OperatorReferences.not_:
             return op_config.not_(operands[0])
@@ -61,6 +63,8 @@ class OpNode:
 
 @dataclasses.dataclass
 class BoundFormulaNode:
+    """Parsing node for a bound formula. Contains the prefix (e.g. forall x) and the open formula 
+    it applies to (e.g. P(x) or Q(x))."""
     prefix: QuantifierPrefixNode
     open_formula: OpenFormulaNode
 
@@ -74,8 +78,8 @@ class BoundFormulaNode:
 
     def eval(self, grounding: Grounding, op_config: OperatorConfig, **kwargs
              ) -> ltn.Formula:
-        quantifier, variables = self.prefix.eval(grounding=grounding, op_config=op_config)
-        return quantifier(variables, self.open_formula.eval(grounding, op_config=op_config))
+        quantifier, variables = self.prefix.eval(grounding=grounding, op_config=op_config, **kwargs)
+        return quantifier(variables, self.open_formula.eval(grounding, op_config=op_config, **kwargs))
     
 
 @dataclasses.dataclass
@@ -98,7 +102,7 @@ class QuantifierPrefixNode:
             quant = op_config.forall
         else:
             quant = op_config.exists
-        variables = [x.eval(grounding=grounding, op_config=op_config) for x in self.variables]
+        variables = [x.eval(grounding=grounding, op_config=op_config, **kwargs) for x in self.variables]
         return quant, variables
 
 
@@ -165,7 +169,28 @@ class VarOrCstNode:
         level+=1
         print(TREE_TAB*level+f"val:{self.val}")
 
-    def eval(self, grounding: Grounding, **kwargs) -> (ltn.Variable | ltn.Constant):
+    def eval(
+            self, 
+            grounding: Grounding, 
+            feed_dict: dict[str, FloatTensorLike | list[FloatTensorLike]] = None,
+            **kwargs
+    ) -> ltn.Variable | ltn.Constant:
+        """_summary_
+
+        Args:
+            grounding (Grounding): _description_
+            feed_dict (dict[str, FloatTensorLike  |  list[FloatTensorLike]], optional): 
+                    If feed_dict is a list of values, a ltn variable is returned.
+                    Otherwise, a ltn constant is returned. Defaults to None.
+
+        Returns:
+            ltn.Variable | ltn.Constant: _description_
+        """
+        if feed_dict is not None and self.val in feed_dict:
+            if isinstance(feed_dict[self.val], (list,tuple)):
+                return ltn.Variable(self.val, feed_dict[self.val])
+            else:
+                return ltn.Constant(self.val, trainable=False)
         try:
             return grounding.variables[self.val]
         except KeyError:
@@ -173,6 +198,7 @@ class VarOrCstNode:
 
 @dataclasses.dataclass
 class PredNode:
+    """Parsing node for a predicate"""
     val: str
 
     def print_tree(self, level: int = 0) -> str:
@@ -218,7 +244,9 @@ class PropositionalVarNode:
         level+=1
         print(TREE_TAB*level+f"val:{self.val}")
 
-    def eval(self, grounding: Grounding, **kwargs) -> ltn.Proposition:
+    def eval(self, grounding: Grounding, feed_dict: dict[str, Any] = None, **kwargs) -> ltn.Proposition:
+        if self.val in feed_dict:
+            return feed_dict[self.val]
         return grounding.propositions[self.val]
 
 
@@ -235,7 +263,7 @@ class Parser:
         var_symbol = Word( alphas+"_"+"?", alphanums+"_").set_parse_action(lambda tokens: VarOrCstNode(val=tokens[0]))
         func_symbol = Word( alphas+"_"+"?", alphanums+"_").set_parse_action(lambda tokens: FuncNode(val=tokens[0]))
         number = Word( nums ).set_parse_action(lambda tokens: NumberNode(val=int(tokens[0])))
-
+        placeholder_symbol = "{"+Word(alphas+"_"+"?", alphanums+"_")+"}"
 
         # term declaration
         self.term = Forward()

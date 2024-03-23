@@ -54,6 +54,7 @@ res = parser.parse_formula("forall x1 ~(C(x1,l_a) & C(x1,l_b))")
 print(res)
 res[0].print_tree()
 print(res[0].eval(grounding=grounding, op_config=op_config))
+print(res[0].eval(grounding=grounding, op_config=op_config, feed_dict={"x1":list(np.random.rand(10,2))}))
 
 # print(parser.parse_formula("forall x,y P(x,y)"))
 #parse_results = parser.parse_formula("forall x ( exists y P(x,y) )")

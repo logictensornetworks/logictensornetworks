@@ -58,9 +58,10 @@ class _OperatorSchedule:
     operator_callable : Callable = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.operator, ltn.Wrapper_Connective):
+        if isinstance(self.operator, (ltn.Wrapper_Connective, ltn.log.Wrapper_Connective)):
             self.operator_callable = self.operator.connective_op
-        elif isinstance(self.operator, (ltn.Wrapper_Quantifier, ltn.Wrapper_Formula_Aggregator)):
+        elif isinstance(self.operator, (ltn.Wrapper_Quantifier, ltn.Wrapper_Formula_Aggregator,
+                                        ltn.log.Wrapper_Quantifier, ltn.log.Wrapper_Formula_Aggregator)):
             self.operator_callable = self.operator.aggreg_op
         else:
             raise ValueError("`operator_wrapper` argument must be of type `ltn.Wrapper_Connective`,"\
