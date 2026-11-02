@@ -160,9 +160,9 @@ class TestPredicate(unittest.TestCase):
             P.model([tf.expand_dims(self.c1.tensor,axis=0),
                 tf.expand_dims(self.c2.tensor,axis=0)]))
         # Produces correct outputs with variable
-        self.assertEqual(
-            P([self.x,self.y]).take('x',0).take('y',0).tensor, 
-            P.model([tf.gather(self.x.tensor,[0]),tf.gather(self.y.tensor,[0])]))
+        self.assertTrue(array_allclose(
+            P([self.x,self.y]).take('x',0).take('y',0).tensor,
+            tf.squeeze(P.model([tf.gather(self.x.tensor,[0]),tf.gather(self.y.tensor,[0])]))))
         self.assertEqual(sorted(P([self.x,self.y]).free_vars),['x','y'])
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('x'), self.n_x)
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('y'), self.n_y)
@@ -175,9 +175,9 @@ class TestPredicate(unittest.TestCase):
             P.model([tf.expand_dims(self.c1.tensor,axis=0),
                 tf.expand_dims(self.c2.tensor,axis=0)]))
         # Produces correct outputs with variable
-        self.assertEqual(
-            P([self.x,self.y]).take('x',0).take('y',0).tensor, 
-            P.model([tf.gather(self.x.tensor,[0]),tf.gather(self.y.tensor,[0])]))
+        self.assertTrue(array_allclose(
+            P([self.x,self.y]).take('x',0).take('y',0).tensor,
+            tf.squeeze(P.model([tf.gather(self.x.tensor,[0]),tf.gather(self.y.tensor,[0])]))))
         self.assertEqual(sorted(P([self.x,self.y]).free_vars),['x','y'])
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('x'), self.n_x)
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('y'), self.n_y)
