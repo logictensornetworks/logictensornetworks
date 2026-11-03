@@ -18,22 +18,28 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         tensorflow: ["latest"]
+        os: [ubuntu-latest]
         include:
           # last release with Keras 2
           - python-version: "3.11"
             tensorflow: "2.15.*"
+            os: ubuntu-latest
+          # Apple Silicon, to catch platform-specific packaging issues
+          - python-version: "3.13"
+            tensorflow: "latest"
+            os: macos-latest
 
-    name: python ${{ matrix.python-version }}, tensorflow ${{ matrix.tensorflow }}
+    name: python ${{ matrix.python-version }}, tensorflow ${{ matrix.tensorflow }}, ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
         cache: pip
