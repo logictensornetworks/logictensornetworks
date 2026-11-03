@@ -17,6 +17,16 @@ def array_allclose(actual,desired):
         actual, desired = np.array(actual), np.array(desired)
         return np.allclose(actual, desired) and (actual.shape == desired.shape)
 
+class ListInputLogits(tf.keras.Model):
+    """Logits model called with a list of inputs, as required by `Predicate.FromLogits`."""
+    def __init__(self, n_classes, dropout=0.):
+        super().__init__()
+        self.dropout = tf.keras.layers.Dropout(dropout)
+        self.dense = tf.keras.layers.Dense(n_classes)
+
+    def call(self, inputs, training=False):
+        return self.dense(self.dropout(inputs[0], training=training))
+
 class TestConstant(unittest.TestCase):
     def setUp(self):
         self.c_val_1 = [2.1,3.]
@@ -49,12 +59,27 @@ class TestConstant(unittest.TestCase):
             self.assertEqual(c.free_vars, [])
 
     def test_cast(self):
-        pass
+        for c_val in [[1,2], np.array([1,2]), tf.constant([1,2]), tf.constant([1.,2.],dtype=tf.float64)]:
+            for trainable in [False, True]:
+                with self.subTest(c_val=c_val, trainable=trainable):
+                    c = core.Constant(c_val, trainable=trainable)
+                    self.assertEqual(c.tensor.dtype, tf.float32)
+                    self.assertTrue(array_allclose(c.tensor.numpy(), np.array([1.,2.])))
 
     def test_expand_dims(self):
         # rationale for expand dims:
         #  P([x,y]), if x.shape [free_dim,1] and y.shape [free_dim], the broadcast is broken
-        pass
+        for trainable in [False, True]:
+            with self.subTest(trainable=trainable):
+                c = core.Constant(self.c_val_4, trainable=trainable)
+                self.assertEqual(c.tensor.shape, [1])
+                self.assertTrue(array_allclose(c.tensor.numpy(), np.array([self.c_val_4])))
+        # indexing a variable returns a tensor: a trainable scalar must still be a variable after the expansion
+        c = core.Constant(self.c_val_4, trainable=True)
+        self.assertTrue(isinstance(c.tensor, tf.Variable))
+        with tf.GradientTape() as tape:
+            res = core.Predicate.Lambda(lambda x: tf.reduce_sum(x,axis=1))(c)
+        self.assertTrue(tape.gradient(res.tensor,c.tensor) is not None)
 
     def test_trainable(self):
         for c_val in self.c_vals:
@@ -99,11 +124,27 @@ class TestVariable(unittest.TestCase):
             x = core.Variable.from_constants('x', [c1,c2], tape=None)
         self.assertTrue(tape.gradient(x.tensor,c1.tensor) is None)
 
+    def test_from_constants_without_tape_warns(self):
+        c1 = core.Constant([2.1,3], trainable=True)
+        with self.assertWarns(UserWarning):
+            core.Variable.from_constants('x', [c1])
+
     def test_cast(self):
-        pass
+        for x_val in [[[1],[2]], np.array([[1],[2]]), tf.constant([[1],[2]]),
+                tf.constant([[1.],[2.]],dtype=tf.float64), [[True],[False]]]:
+            with self.subTest(x_val=x_val):
+                x = core.Variable('x',x_val)
+                self.assertEqual(x.tensor.dtype, tf.float32)
+                self.assertTrue(array_allclose(x.tensor.numpy(), np.array(x_val,dtype=np.float32)))
 
     def test_expand_dims(self):
-        pass
+        # individuals given as scalars get a feature dim, like individuals with one feature
+        x = core.Variable('x',self.x_val_4)
+        self.assertEqual(x.tensor.shape, [10,1])
+        self.assertTrue(array_allclose(x.tensor.numpy()[:,0], self.x_val_4))
+        y = core.Variable('y',np.random.rand(5,1))
+        add = core.Function.Lambda(lambda args: args[0]+args[1])
+        self.assertEqual(add([x,y]).tensor.shape, [10,5,1])
 
 class TestPredicate(unittest.TestCase):
     def setUp(self):
@@ -199,6 +240,27 @@ class TestPredicate(unittest.TestCase):
         self.assertEqual(sorted(P([self.x,self.y]).free_vars),['x','y'])
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('x'), self.n_x)
         self.assertEqual(P([self.x,self.y])._get_dim_of_free_var('y'), self.n_y)
+
+    def test_passes_kwargs_to_model(self):
+        """e.g. `training=True` reaches the dropout layers, also through `FromLogits`"""
+        x = core.Variable('x',np.random.normal(0.,1.,(64,8)))
+        label = core.Constant(0, trainable=False)
+        dropout_model = tf.keras.Sequential([tf.keras.layers.Dropout(.5), tf.keras.layers.Dense(1, activation=tf.nn.sigmoid)])
+        predicates_and_inputs = [
+            (core.Predicate(dropout_model), x),
+            (core.Predicate.FromLogits(ListInputLogits(3,dropout=.5), activation_function="softmax"), [x,label]),
+            (core.Predicate.FromLogits(ListInputLogits(3,dropout=.5), activation_function="sigmoid"), [x,label]),
+        ]
+        for P, inputs in predicates_and_inputs:
+            with self.subTest(model=P.model.__class__.__name__):
+                inference = P(inputs, training=False).tensor
+                self.assertTrue(array_allclose(P(inputs).tensor, inference))
+                self.assertFalse(np.allclose(P(inputs, training=True).tensor, inference))
+
+    def test_trainable_variables_warns_when_empty(self):
+        P = core.Predicate.Lambda(lambda x: tf.reduce_sum(x,axis=1))
+        with self.assertWarns(UserWarning):
+            self.assertEqual(P.trainable_variables, [])
 
 class TestFunction(unittest.TestCase):
     def setUp(self):
@@ -351,9 +413,18 @@ class TestBroadcast(unittest.TestCase):
             self.assertEqual(sorted(expr.free_vars), sorted(self.var_settings.keys()))
             for label,v_s in self.var_settings.items():
                 self.assertEqual(expr._get_dim_of_free_var(label).numpy(), v_s["n_individuals"])
-            
+
     def test_in_place(self):
-        pass
+        xs = list(self.xs.values())
+        copies = core.broadcast_exprs(xs, in_place=False)
+        for x, copy in zip(xs, copies):
+            self.assertIsNot(copy, x)
+            self.assertEqual(x.free_vars, [x.label])
+        exprs = core.broadcast_exprs(xs, in_place=True)
+        for x, expr, copy in zip(xs, exprs, copies):
+            self.assertIs(expr, x)
+            self.assertEqual(x.free_vars, copy.free_vars)
+            self.assertTrue(array_allclose(x.tensor, copy.tensor))
 
 class TestConnective(unittest.TestCase):
     def setUp(self):
@@ -415,6 +486,12 @@ class TestConnective(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Could not connect formulas"):
             MatMul(self.p1(self.x), self.p1(self.y))
 
+    def test_passes_kwargs(self):
+        a = core.Proposition(0., trainable=False)
+        b = core.Proposition(1., trainable=False)
+        self.assertTrue(float(self.And(a,b).tensor) > 0.) # the stable product never reaches 0
+        self.assertEqual(float(self.And(a,b,stable=False).tensor), 0.)
+
 class TestQuantifier(unittest.TestCase):
     def setUp(self):
         self.Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_pMeanError(p=2),semantics="forall")
@@ -459,9 +536,19 @@ class TestQuantifier(unittest.TestCase):
         ))
         self.assertTrue(array_allclose(
             self.Forall((self.x,self.z),phi).take('y',0).tensor,
-            self.Forall.aggreg_op(phi.tensor, 
+            self.Forall.aggreg_op(phi.tensor,
                 axis=[phi._get_axis_of_free_var('x'),phi._get_axis_of_free_var('z')])[0]
         ))
+
+    def test_passes_kwargs(self):
+        """e.g. `Forall(x, phi, p=5)`, also with a mask"""
+        x = core.Variable('x',np.random.rand(4,1))
+        wff = core.Formula(tf.constant([.2,.4,.6,1.]), free_vars=['x'])
+        mask = core.Formula(tf.constant([1.,1.,0.,1.]), free_vars=['x'])
+        Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_pMeanError(p=2, stable=False),semantics="forall")
+        # with p=1, the p-mean error is the mean
+        self.assertTrue(array_allclose(Forall(x,wff,p=1).tensor, np.mean([.2,.4,.6,1.])))
+        self.assertTrue(array_allclose(Forall(x,wff,mask=mask,p=1).tensor, np.mean([.2,.4,1.])))
 
 class TestTransposeFreeVars(unittest.TestCase):
     def setUp(self):
@@ -496,7 +583,14 @@ class TestTransposeFreeVars(unittest.TestCase):
         self.assertTrue(array_allclose(phi1.tensor,phi3.tensor))
 
     def test_in_place(self):
-        pass
+        phi = self.p([self.x,self.y,self.z])
+        copy = core.transpose_free_vars(phi, ['z','x','y'])
+        self.assertIsNot(copy, phi)
+        self.assertEqual(phi.free_vars, ['x','y','z'])
+        res = core.transpose_free_vars(phi, ['z','x','y'], in_place=True)
+        self.assertIs(res, phi)
+        self.assertEqual(phi.free_vars, ['z','x','y'])
+        self.assertTrue(array_allclose(phi.tensor, copy.tensor))
 
 class TestBroadcastToMask(unittest.TestCase):
     def setUp(self):
@@ -582,8 +676,27 @@ class TestGuardedQuantifier(unittest.TestCase):
         self.assertTrue(array_allclose(actual.tensor,desired.tensor))
 
     def test_gradients(self):
-        pass
-    
+        """Gradients reach the guarded truth values only, and stay finite when a guard is empty."""
+        x = core.Variable('x',np.random.rand(3,1))
+        y = core.Variable('y',np.random.rand(4,1))
+        mask = core.Formula(
+            tf.constant(
+                [[1.,1.,0.,0.],
+                [0.,0.,0.,0.],
+                [0.,1.,1.,1.]]),
+            free_vars=['x','y'])
+        guarded = mask.tensor.numpy() > 0
+        truth_values = tf.Variable(np.random.uniform(.1,.9,(3,4)), dtype=tf.float32)
+        for quantifier in [self.Forall, self.Exists]:
+            for var in [x, y]: # aggregating y, the guard of the second x is empty
+                with tf.GradientTape() as tape:
+                    wff = core.Formula(tf.identity(truth_values), free_vars=['x','y'])
+                    res = quantifier(var, wff, mask=mask)
+                grads = tape.gradient(res.tensor, truth_values).numpy()
+                self.assertTrue(np.all(np.isfinite(grads)))
+                self.assertTrue(np.all(grads[guarded] != 0.))
+                self.assertTrue(np.all(grads[~guarded] == 0.))
+
     def test_empty_semantics_forall(self):
         x = core.Variable('x',np.random.rand(self.n_x,1))
         y = core.Variable('y',np.random.rand(self.n_y,1)+1.) # all y are greater
@@ -642,6 +755,42 @@ class TestGuardedQuantifier(unittest.TestCase):
                 expected = np.stack([z_values, [empty_value]*len(z_values), [empty_value]*len(z_values)])
                 self.assertEqual(actual.free_vars, ['y','z'])
                 self.assertTrue(array_allclose(actual.tensor, expected))
+
+    def test_quantified_vars_not_in_mask(self):
+        """A mask on other free variables leaves the whole domain to the quantified variables."""
+        z = core.Variable('z',np.random.rand(2,1))
+        Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Min(),semantics="forall")
+        Exists = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Max(),semantics="exists")
+        wffs_and_masks = [
+            # the rows of the mask have different lengths; the first mask gave wrong values, the second an error
+            (np.random.rand(2,3,2), ['x','y','z'], [[1.,1.,1.],[0.,1.,1.]], ['x','y']),
+            (np.random.rand(2,3,2), ['x','y','z'], [[1.,1.,0.],[0.,1.,1.]], ['x','y']),
+            (np.random.rand(3,2), ['x','z'], [1.,0.,1.], ['x']),
+        ]
+        for wff_values, wff_vars, mask_values, mask_vars in wffs_and_masks:
+            wff = core.Formula(tf.constant(wff_values,dtype=tf.float32), free_vars=wff_vars)
+            mask = core.Formula(tf.constant(mask_values), free_vars=mask_vars)
+            for quantifier, aggreg, empty_value in [(Forall,np.min,1.),(Exists,np.max,0.)]:
+                with self.subTest(mask=mask_values, semantics=quantifier.semantics):
+                    actual = quantifier(z, wff, mask=mask)
+                    expected = np.where(np.array(mask_values) > 0, aggreg(wff.tensor.numpy(), axis=-1), empty_value)
+                    self.assertEqual(actual.free_vars, mask_vars)
+                    self.assertTrue(array_allclose(actual.tensor, expected))
+
+    def test_mask_on_more_free_vars(self):
+        """Quantifying one var of a mask on three vars keeps the other two (the aggregation result is ragged)."""
+        w = core.Variable('w',np.random.rand(4,1))
+        wff_values = np.random.rand(2,3,4)
+        mask_values = np.random.rand(2,3,4) > .5
+        mask_values[0,0] = False # an empty guard
+        wff = core.Formula(tf.constant(wff_values,dtype=tf.float32), free_vars=['x','y','w'])
+        mask = core.Formula(tf.constant(mask_values,dtype=tf.float32), free_vars=['x','y','w'])
+        Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Min(),semantics="forall")
+        actual = Forall(w, wff, mask=mask)
+        expected = np.where(mask_values, wff_values, np.inf).min(axis=2)
+        expected[~mask_values.any(axis=2)] = 1.
+        self.assertEqual(actual.free_vars, ['x','y'])
+        self.assertTrue(array_allclose(actual.tensor, expected))
 
 class TestDiag(unittest.TestCase):
     def setUp(self):
@@ -708,6 +857,91 @@ class TestFormulaAggregator(unittest.TestCase):
         phi = core.Predicate.MLP([2])(core.Variable('x',np.random.rand(3,2)))
         with self.assertRaises(ValueError):
             aggregator([phi])
+
+class TestOptimizers(unittest.TestCase):
+    """Trainable constants and propositions are `tf.Variable`s, not Keras variables:
+    Keras optimizers must update them too (see the smokes-friends-cancer example)."""
+
+    def test_constants(self):
+        for optimizer in [tf.keras.optimizers.SGD(learning_rate=.1), tf.keras.optimizers.Adam(learning_rate=.1)]:
+            with self.subTest(optimizer=optimizer.__class__.__name__):
+                c1 = core.Constant([0.,0.], trainable=True)
+                c2 = core.Constant([0.,0.], trainable=True)
+                c3 = core.Constant(0., trainable=True)
+                P = core.Predicate.Lambda(lambda x: tf.sigmoid(tf.reduce_sum(x,axis=1)))
+                Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Mean(),semantics="forall")
+                trainable_variables = [c1.tensor, c2.tensor, c3.tensor]
+                with tf.GradientTape() as tape:
+                    x = core.Variable.from_constants('x', [c1,c2], tape=tape)
+                    loss = 2. - Forall(x,P(x)).tensor - P(c3).tensor
+                optimizer.apply_gradients(zip(tape.gradient(loss, trainable_variables), trainable_variables))
+                # P increases with the features of its argument
+                for c in [c1, c2, c3]:
+                    self.assertTrue(np.all(c.tensor.numpy() > 0.))
+
+    def test_propositions_stay_in_truth_range(self):
+        And = core.Wrapper_Connective(fuzzy_ops.And_Prod())
+        Not = core.Wrapper_Connective(fuzzy_ops.Not_Std())
+        for optimizer in [tf.keras.optimizers.SGD(learning_rate=5.), tf.keras.optimizers.Adam(learning_rate=5.)]:
+            with self.subTest(optimizer=optimizer.__class__.__name__):
+                a = core.Proposition(.5, trainable=True)
+                b = core.Proposition(.5, trainable=True)
+                trainable_variables = [a.tensor, b.tensor]
+                with tf.GradientTape() as tape:
+                    loss = 1. - And(a,Not(b)).tensor
+                optimizer.apply_gradients(zip(tape.gradient(loss, trainable_variables), trainable_variables))
+                # the large step pushes the truth values out of [0,1], and the constraint clips them back
+                self.assertEqual(float(a.tensor), 1.)
+                self.assertEqual(float(b.tensor), 0.)
+
+class TestDigitAdditionAxiom(unittest.TestCase):
+    """The axiom of the MNIST addition example combines diag, a mask built with a function,
+    and a predicate from logits. Compare it with a direct computation."""
+
+    def setUp(self):
+        rng = np.random.default_rng(0)
+        self.n_digits = 3
+        self.images_x = rng.normal(size=(5,4)).astype(np.float32)
+        self.images_y = rng.normal(size=(5,4)).astype(np.float32)
+        self.labels = np.array([0.,1.,3.,4.,5.]) # no two digits sum to 5: the guard of the last pair is empty
+        self.logits_model = ListInputLogits(self.n_digits)
+        self.logits_model([self.images_x]) # builds the weights
+        self.Digit = core.Predicate.FromLogits(self.logits_model, activation_function="softmax")
+        self.d1 = core.Variable('d1', range(self.n_digits))
+        self.d2 = core.Variable('d2', range(self.n_digits))
+        self.add = core.Function.Lambda(lambda inputs: inputs[0]+inputs[1])
+        self.equals = core.Predicate.Lambda(lambda inputs: inputs[0] == inputs[1])
+        self.And = core.Wrapper_Connective(fuzzy_ops.And_Prod(stable=False))
+        self.Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_pMeanError(p=2,stable=False),semantics="forall")
+        self.Exists = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_pMean(p=2,stable=False),semantics="exists")
+
+    def axiom(self):
+        images_x = core.Variable('x', self.images_x)
+        images_y = core.Variable('y', self.images_y)
+        labels_z = core.Variable('z', self.labels)
+        return self.Forall(
+            core.diag(images_x,images_y,labels_z),
+            self.Exists(
+                (self.d1,self.d2),
+                self.And(self.Digit([images_x,self.d1]),self.Digit([images_y,self.d2])),
+                mask=self.equals([self.add([self.d1,self.d2]), labels_z])
+            )
+        ).tensor
+
+    def expected(self):
+        probs_x = tf.nn.softmax(self.logits_model([self.images_x])).numpy()
+        probs_y = tf.nn.softmax(self.logits_model([self.images_y])).numpy()
+        sat_per_pair = []
+        for p_x, p_y, label in zip(probs_x, probs_y, self.labels):
+            products = [p_x[d1]*p_y[d2] for d1 in range(self.n_digits) for d2 in range(self.n_digits) if d1+d2 == label]
+            sat_per_pair.append(np.sqrt(np.mean(np.square(products))) if products else 0.)
+        return 1.-np.sqrt(np.mean(np.square(1.-np.array(sat_per_pair))))
+
+    def test_values_correct(self):
+        self.assertTrue(np.isclose(float(self.axiom()), self.expected(), atol=1e-5))
+
+    def test_in_tf_function(self):
+        self.assertTrue(np.isclose(float(tf.function(self.axiom)()), self.expected(), atol=1e-5))
 
 class TestUtils(unittest.TestCase):
     def test_smooth_equality_gradients_at_equal_inputs(self):
