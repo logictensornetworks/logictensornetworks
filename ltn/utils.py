@@ -16,22 +16,29 @@ def Pred_equal_strict():
                 dtype=tf.float32
             ))
 
+def _euclidean_distance(u, v):
+    """Euclidean distance along axis 1, with a zero (instead of NaN) gradient when u == v."""
+    squared = tf.reduce_sum(tf.square(u-v),axis=1)
+    non_zero = squared > 0.
+    # the sqrt gradient is infinite at 0; feed it a dummy value there so that tf.where does not propagate NaNs
+    return tf.where(non_zero, tf.sqrt(tf.where(non_zero, squared, 1.)), 0.)
+
 def Pred_equal_smooth_exp(alpha=1):
     """
     Returns a 2-ary LTN predicate. It returns exp(-alpha*d(u,v)), where d(u,v) is the
-    Euclidean distance between u and v. 
+    Euclidean distance between u and v.
     """
     return ltn.Predicate.Lambda(
-            lambda args: tf.exp(-alpha*tf.sqrt(tf.reduce_sum(tf.square(args[0]-args[1]),axis=1)))
+            lambda args: tf.exp(-alpha*_euclidean_distance(args[0],args[1]))
     )
 
 def Pred_equal_smooth_inv(alpha=1):
     """
     Returns a 2-ary LTN predicate. It returns 1/(1+alpha*d(u,v)), where d(u,v) is the
-    Euclidean distance between u and v. 
+    Euclidean distance between u and v.
     """
     return ltn.Predicate.Lambda(
-            lambda args: 1/(1+alpha*tf.sqrt(tf.reduce_sum(tf.square(args[0]-args[1]),axis=1)))
+            lambda args: 1/(1+alpha*_euclidean_distance(args[0],args[1]))
     )
 
 def Func_add():

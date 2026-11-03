@@ -1,9 +1,12 @@
 import unittest
 import pdb
+import subprocess
+import sys
 
 import numpy as np
 import tensorflow as tf
 
+import ltn
 from ltn import core
 from ltn import fuzzy_ops
 
@@ -269,6 +272,21 @@ class TestProposition(unittest.TestCase):
             res = self.And(a,b)
         self.assertTrue(tape.gradient(res.tensor,a.tensor) is None)
 
+    def test_invalid_truth_values(self):
+        for value in [-0.1, 1.5, float('nan'), "a", None]:
+            with self.assertRaises(ValueError):
+                core.Proposition(value, trainable=False)
+
+    def test_invalid_truth_value_with_optimizations(self):
+        """The range check must not rely on `assert`, which `python -O` strips."""
+        code = ("import ltn\n"
+                "try:\n"
+                "    ltn.Proposition(1.5, trainable=False)\n"
+                "except ValueError:\n"
+                "    print('raised')\n")
+        result = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
+        self.assertIn("raised", result.stdout)
+
 class TestBroadcast(unittest.TestCase):
     def setUp(self):
         self.var_settings = {
@@ -391,6 +409,11 @@ class TestConnective(unittest.TestCase):
             res.take('x',0).take('y',0).tensor,
             self.And.connective_op(phi1.take('x',0).tensor,phi2.take('x',0).take('y',0).tensor)
         )
+
+    def test_incompatible_shapes_raise_value_error(self):
+        MatMul = core.Wrapper_Connective(lambda a, b: tf.matmul(a, b))
+        with self.assertRaisesRegex(ValueError, "Could not connect formulas"):
+            MatMul(self.p1(self.x), self.p1(self.y))
 
 class TestQuantifier(unittest.TestCase):
     def setUp(self):
@@ -550,7 +573,9 @@ class TestGuardedQuantifier(unittest.TestCase):
         
 
     def test_values_correct(self):
-        take_x = np.random.randint(self.n_x)
+        # pick an x that guards at least one y; the empty case is covered by test_empty_semantics_*
+        non_empty_xs = np.flatnonzero(tf.reduce_any(self.mask1.tensor > 0, axis=1))
+        take_x = np.random.choice(non_empty_xs)
         actual = self.Forall(self.y,self.p1([self.x,self.y]),mask=self.mask1).take('x', take_x)
         safe_y = core.Variable('safe_y',tf.boolean_mask(self.y.tensor, self.x.take('x',take_x).tensor > self.y.tensor))
         desired = self.Forall(safe_y, self.p1([self.x,safe_y])).take('x',take_x)
@@ -602,11 +627,102 @@ class TestGuardedQuantifier(unittest.TestCase):
         expected = np.array([.4,.15,.65,.0])
         self.assertTrue(array_allclose(actual.tensor,expected))
 
+    def test_wff_vars_not_in_mask(self):
+        """The empty semantics broadcast over the free variables of the wff that are not in the mask."""
+        x = core.Variable('x',[[0.],[1.],[2.]])
+        y = core.Variable('y',[[0.],[10.],[20.]])
+        p = core.Predicate.Lambda(lambda inputs: tf.squeeze(inputs[2],axis=1)) # p(x,y,z) = z
+        mask = core.Predicate.Lambda(lambda inputs: tf.squeeze(inputs[1] < 5., axis=1))([x,y]) # only y=0 guards x
+        Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Min(),semantics="forall")
+        Exists = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Max(),semantics="exists")
+        for z_values in [[.1,.2,.3], [.1,.2,.3,.4,.5]]: # as many z as y, and more z than y
+            z = core.Variable('z',np.array(z_values)[:,np.newaxis])
+            for quantifier, empty_value in [(Forall,1.),(Exists,0.)]:
+                actual = quantifier(x, p([x,y,z]), mask=mask)
+                expected = np.stack([z_values, [empty_value]*len(z_values), [empty_value]*len(z_values)])
+                self.assertEqual(actual.free_vars, ['y','z'])
+                self.assertTrue(array_allclose(actual.tensor, expected))
+
 class TestDiag(unittest.TestCase):
-    pass
+    def setUp(self):
+        self.x = core.Variable('x',np.random.rand(3,1))
+        self.y = core.Variable('y',np.random.rand(3,1))
+        self.p = core.Predicate.Lambda(lambda inputs: tf.squeeze(inputs[0]*inputs[1],axis=1))
+        self.Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Mean(),semantics="forall")
+
+    def test_diag_pairs_individuals(self):
+        x, y = core.diag(self.x, self.y)
+        phi = self.p([x,y])
+        self.assertEqual(phi.tensor.shape, [3])
+        self.assertTrue(array_allclose(phi.tensor, self.x.tensor[:,0]*self.y.tensor[:,0]))
+
+    def test_quantifier_undiags(self):
+        core.diag(self.x, self.y)
+        self.Forall([self.x,self.y], self.p([self.x,self.y]))
+        self.assertEqual(self.x.free_vars, ['x'])
+        self.assertEqual(self.y.free_vars, ['y'])
+
+    def test_diag_lock_survives_quantifier(self):
+        core.diag_lock(self.x, self.y)
+        self.Forall([self.x,self.y], self.p([self.x,self.y]))
+        self.assertEqual(self.x.free_vars, ['diaglock_x_y'])
+        self.assertEqual(self.y.free_vars, ['diaglock_x_y'])
+        self.assertEqual(self.p([self.x,self.y]).tensor.shape, [3])
+
+    def test_error_messages_name_the_variable(self):
+        core.diag(self.x, self.y)
+        with self.assertRaisesRegex(ValueError, "temporarily diagged: x"):
+            core.diag(self.x, self.y)
+        with self.assertRaisesRegex(ValueError, "temporarily diagged: x"):
+            core.diag_lock(self.x, self.y)
 
 class TestInTfFunction(unittest.TestCase):
-    pass
+    def setUp(self):
+        self.x = core.Variable('x',np.random.rand(3,2))
+        self.y = core.Variable('y',np.random.rand(4,2))
+        self.p = core.Predicate.MLP([2,2])
+        self.Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_pMeanError(p=2),semantics="forall")
+
+    def test_take_with_tensor_indices(self):
+        @tf.function
+        def take(indices):
+            return self.p([self.x,self.y]).take('x',indices).tensor
+        phi = self.p([self.x,self.y])
+        self.assertTrue(array_allclose(take(tf.constant(1)), phi.take('x',1).tensor))
+        self.assertTrue(array_allclose(take(tf.constant([0,2])), phi.take('x',[0,2]).tensor))
+
+    def test_quantifier(self):
+        @tf.function
+        def sat():
+            return self.Forall([self.x,self.y], self.p([self.x,self.y])).tensor
+        self.assertTrue(array_allclose(sat(), self.Forall([self.x,self.y], self.p([self.x,self.y])).tensor))
+
+class TestFormulaAggregator(unittest.TestCase):
+    def test_passes_kwargs(self):
+        aggregator = core.Wrapper_Formula_Aggregator(fuzzy_ops.Aggreg_pMean(p=2))
+        wffs = [core.Proposition(0., trainable=False), core.Proposition(1., trainable=False)]
+        self.assertTrue(array_allclose(aggregator(wffs, p=1, stable=False).tensor, np.array(.5)))
+
+    def test_rejects_free_vars(self):
+        aggregator = core.Wrapper_Formula_Aggregator(fuzzy_ops.Aggreg_Mean())
+        phi = core.Predicate.MLP([2])(core.Variable('x',np.random.rand(3,2)))
+        with self.assertRaises(ValueError):
+            aggregator([phi])
+
+class TestUtils(unittest.TestCase):
+    def test_smooth_equality_gradients_at_equal_inputs(self):
+        for pred in [ltn.utils.Pred_equal_smooth_exp(), ltn.utils.Pred_equal_smooth_inv()]:
+            u = tf.Variable([[1.,2.],[0.,0.]])
+            v = tf.constant([[1.,2.],[3.,4.]])
+            with tf.GradientTape() as tape:
+                out = pred.model([u,v])
+            self.assertTrue(np.all(np.isfinite(tape.gradient(out,u).numpy())))
+            self.assertTrue(array_allclose(out[0], np.float32(1.)))
+
+    def test_smooth_equality_values(self):
+        u, v = tf.constant([[0.,0.]]), tf.constant([[3.,4.]]) # distance 5
+        self.assertTrue(array_allclose(ltn.utils.Pred_equal_smooth_exp(alpha=.1).model([u,v]), np.exp([-.5])))
+        self.assertTrue(array_allclose(ltn.utils.Pred_equal_smooth_inv(alpha=.1).model([u,v]), np.array([1/1.5])))
 
 class TestTypeCheck(unittest.TestCase):
     def setUp(self):
@@ -672,7 +788,7 @@ class TestTypeCheck(unittest.TestCase):
             self.fail("TypeError raised unexpectedly.")
         with self.assertRaises(TypeError):
             self.Exists(self.q, self.p1(self.x))
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(TypeError, "instance of <class 'ltn.core.Term'>"):
             self.Exists(self.x,self.f1(self.x))
         with self.assertRaises(TypeError):
             self.Exists((self.x,self.y),self.p2([self.x,self.y]),mask=self.mask.tensor)

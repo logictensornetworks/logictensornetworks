@@ -31,9 +31,11 @@ class Expression:
 
     def take(self, free_var: VarLabel, indices: Union[int,List[int]]) -> Expression:
         """Take elements along the axis that corresponds to `free_var`."""
-        if tf.rank(indices) == 0:
+        # static rank, so that the branching also works when tracing a tf.function
+        rank = tf.convert_to_tensor(indices).shape.rank
+        if rank == 0:
             remaining_free_vars = [v for v in self.free_vars if v != free_var]
-        elif tf.rank(indices) == 1:
+        elif rank == 1:
             remaining_free_vars = self.free_vars.copy()
         else:
             raise ValueError("Give a single indice or a list of indices.")
@@ -114,8 +116,10 @@ class Constant(Term):
 class Proposition(Formula):
     def __init__(self, truth_value: float, trainable: bool) -> None:
         try:
-            assert 0 <= float(truth_value) <= 1
-        except:
+            in_range = 0 <= float(truth_value) <= 1
+        except (TypeError, ValueError):
+            in_range = False
+        if not in_range:
             raise ValueError("The truth value of a proposition should be a float in [0,1].")
         self._trainable = trainable
         if self._trainable:
@@ -308,8 +312,8 @@ class tf_LambdaModel(tf.keras.Model):
 def diag(*variables: Variable) -> List[Variable]:
     for var in variables:
         if var.free_vars[0].startswith("diag_"):
-            raise ValueError(f"Trying to diag a variable that is already temporarily"
-                +"diagged: {var.label}.")
+            raise ValueError(f"Trying to diag a variable that is already temporarily "
+                +f"diagged: {var.label}.")
     diag_label = "diag_"+"_".join([var.label for var in variables])
     for var in variables:
         var.free_vars = [diag_label]
@@ -317,7 +321,7 @@ def diag(*variables: Variable) -> List[Variable]:
 
 def undiag(*variables: Variable) -> List[Variable]:
     for var in variables:
-        var.free_vars = [var.label] if var.locked_diag_label else [var.label] 
+        var.free_vars = [var.locked_diag_label] if var.locked_diag_label else [var.label]
     return variables
 
 def diag_lock(*variables: Variable) -> List[Variable]:
@@ -325,7 +329,7 @@ def diag_lock(*variables: Variable) -> List[Variable]:
     for var in variables:
         if var.free_vars[0].startswith("diag"):
             raise ValueError(f"Trying to diaglock a variable that is temporarily diagged: "
-                    +"{var.label}.\nCall `diag_lock` on variables when they are undiagged.")
+                    +f"{var.label}.\nCall `diag_lock` on variables when they are undiagged.")
     diag_label = "diaglock_"+"_".join([var.label for var in variables])
     for var in variables:
         var.locked_diag_label = diag_label
@@ -375,7 +379,7 @@ class Wrapper_Connective:
             t_result = self.connective_op(*as_tensors(wffs), **kwargs)
         except tf.errors.InvalidArgumentError:
             raise ValueError("Could not connect formulas with shapes [%s] and free variables [%s]."
-                % (', '.join(map(str,[wff.shape for wff in wffs])),
+                % (', '.join(map(str,[wff.tensor.shape for wff in wffs])),
                 ', '.join(map(str,[wff.free_vars for wff in wffs])))
             )
         result = Formula(t_result, wffs[0].free_vars)
@@ -400,7 +404,7 @@ class Wrapper_Quantifier:
                         "Got an instance of %s instead." % (Variable, type(x)))
         if not isinstance(wff, Formula):
             raise TypeError("The quantified expression should be an instance of %s. "\
-                    "Got an instance of %s instead." % (Formula, type(x)))
+                    "Got an instance of %s instead." % (Formula, type(wff)))
         aggreg_vars = set([var.free_vars[0] for var in variables])
         if mask is not None:
             if not isinstance(mask, Formula):
@@ -420,6 +424,12 @@ class Wrapper_Quantifier:
             aggreg_axes_in_mask = [mask.free_vars.index(var) for var in aggreg_vars 
                     if var in mask.free_vars]
             non_empty_vars = tf.reduce_sum(tf.cast(mask.tensor,tf.int32), axis=aggreg_axes_in_mask) != 0
+            # the result has the free vars of the mask first, then those of the wff only;
+            # add trailing axes so that non_empty_vars broadcasts over the latter
+            n_vars_not_in_mask = len([var for var in wff.free_vars
+                    if var not in aggreg_vars and var not in mask.free_vars])
+            for _ in range(n_vars_not_in_mask):
+                non_empty_vars = tf.expand_dims(non_empty_vars, axis=-1)
             empty_semantics = 1. if self.semantics == "forall" else 0
             
             t_result = tf.where(
@@ -443,7 +453,7 @@ class Wrapper_Formula_Aggregator:
         for wff in wffs:
             if wff.free_vars: # list not empty
                 raise ValueError('Some formulas still contain free variables.')
-        t_result = self.aggreg_op(tf.stack(as_tensors(wffs)))
+        t_result = self.aggreg_op(tf.stack(as_tensors(wffs)), **kwargs)
         result = Formula(t_result, free_vars=[])
         return result
 
