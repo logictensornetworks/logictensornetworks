@@ -39,6 +39,8 @@ keywords = {Neurosymbolic AI, Deep learning and reasoning, Many-valued logics}
 
 ## Installation
 
+LTN requires Python 3.10+ and TensorFlow 2.15+. On Apple Silicon Macs the regular `tensorflow` package is used (`tensorflow-macos` is no longer needed). TensorFlow stopped publishing Intel (x86_64) macOS builds after 2.16.2, so on Intel Macs use Python 3.10–3.12.
+
 For the latest release version, install via pip. To install the core dependencies, run:
 ```
 pip install ltn
@@ -53,6 +55,8 @@ For the latest development version, clone the github repository and install it l
 ```
 pip install -e <local project path>
 ```
+
+Building from source requires setuptools 77 or newer. pip fetches it automatically; if you build with `--no-build-isolation` (e.g. for distro or conda packaging), upgrade setuptools in that environment first.
 
 ## Repository structure
 

@@ -31,12 +31,17 @@ jobs:
           - python-version: "3.11"
             tensorflow: "2.15.*"
             os: ubuntu-latest
-          # Apple Silicon, to catch platform-specific packaging issues
+          # Apple Silicon, to catch platform-specific packaging issues:
+          # newest Python with latest TF, and the oldest supported TF (Keras 2)
           - python-version: "3.13"
             tensorflow: "latest"
             os: macos-latest
+          - python-version: "3.11"
+            tensorflow: "2.15.*"
+            os: macos-latest
 
-    name: python ${{ matrix.python-version }}, tensorflow ${{ matrix.tensorflow }}, ${{ matrix.os }}
+    # ubuntu jobs keep their pre-matrix names so required status checks still match
+    name: python ${{ matrix.python-version }}, tensorflow ${{ matrix.tensorflow }}${{ matrix.os != 'ubuntu-latest' && format(', {0}', matrix.os) || '' }}
     steps:
     - uses: actions/checkout@v5
     - uses: actions/setup-python@v6

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ltn"
-version = "2.1"
+version = "2.2"
 authors = [
   {name="Samy Badreddine", email="badreddine.samy@gmail.com"},
 ]
