@@ -1,5 +1,7 @@
 # Logic Tensor Networks (LTN)
 
+[![tests](https://github.com/logictensornetworks/logictensornetworks/actions/workflows/tests.yml/badge.svg)](https://github.com/logictensornetworks/logictensornetworks/actions/workflows/tests.yml)
+
 Logic Tensor Network (LTN) is a neurosymbolic framework that supports querying, learning and reasoning with both rich data and rich abstract knowledge about the world.
 LTN uses a differentiable first-order logic language, called Real Logic, to incorporate data and logic. The figure below describes features of Real Logic.
 
@@ -59,7 +61,7 @@ pip install -e <local project path>
 - `ltn/utils.py` -- a collection of useful functions,
 - `tutorials/` -- tutorials to start with LTN,
 - `examples/` -- various problems approached using LTN,
-- `tests/` -- tests.
+- `test/` -- tests, run with `python -m pytest test`.
 
 ## Getting Started
 

@@ -147,6 +147,10 @@ def _flatten_free_dims(
         expr.free_vars = ["_flat_"+"_".join(expr.free_vars)]
     return exprs
 
+def _as_shape(shape: Union[int, List[int]]) -> tuple:
+    """Keras 3 only accepts tuples as input shapes; also accept a single int."""
+    return tuple(shape) if isinstance(shape, (list, tuple)) else (shape,)
+
 class _Model:
     def __init__(self, model: tf.keras.Model, with_feature_dims: bool) -> None:
         self.model: tf.keras.Model = model
@@ -246,7 +250,7 @@ class Predicate(_Model):
     def MLP(cls: Predicate, 
             input_shapes,
             hidden_layer_sizes=(16,16)) -> Predicate:
-        inputs = [tf.keras.Input(shape) for shape in input_shapes]
+        inputs = [tf.keras.Input(_as_shape(shape)) for shape in input_shapes]
         flat_inputs = [layers.Flatten()(x) for x in inputs]
         hidden = layers.Concatenate()(flat_inputs) if len(flat_inputs) > 1 else flat_inputs[0]
         for units in hidden_layer_sizes:
@@ -284,12 +288,13 @@ class Function(_Model):
             input_shapes, 
             output_shape, 
             hidden_layer_sizes = (16,16)) -> Function:
-        inputs = [tf.keras.Input(shape) for shape in input_shapes]
+        inputs = [tf.keras.Input(_as_shape(shape)) for shape in input_shapes]
         flat_inputs = [layers.Flatten()(x) for x in inputs]
         hidden = layers.Concatenate()(flat_inputs) if len(flat_inputs) > 1 else flat_inputs[0]
         for units in hidden_layer_sizes:
             hidden = layers.Dense(units,activation=tf.nn.elu)(hidden)
-        output_nodes = tf.math.reduce_prod(output_shape)
+        output_shape = _as_shape(output_shape)
+        output_nodes = int(np.prod(output_shape))
         flat_outputs = layers.Dense(output_nodes)(hidden)
         outputs = layers.Reshape(output_shape)(flat_outputs)
         model = tf.keras.Model(inputs=inputs, outputs=outputs)
