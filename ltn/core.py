@@ -498,7 +498,9 @@ class _SigmoidTfModel(tf.keras.Model):
         """ with_class_indexing: If true, must have last axis (-1) for indexing classes.
         logits_model : must accept list of inputs
          """
-        super().__init__()
+        # Keras 3 derives the default name from the class name; a leading underscore
+        # is not a valid name scope inside a tf.function
+        super().__init__(name="sigmoid_tf_model")
         self.logits_model = logits_model
         self.call = self._call_with_class_indexing if with_class_indexing else self._call_without_class_indexing
 
@@ -523,7 +525,7 @@ class _SigmoidTfModel(tf.keras.Model):
 class _SoftmaxTfModel(tf.keras.Model):
     def __init__(self, logits_model: tf.keras.Model, **kwargs: Any) -> None:
         """ logits_model: Must have last axis for classes, even if only one class. """
-        super().__init__()
+        super().__init__(name="softmax_tf_model")  # see _SigmoidTfModel
         self.logits_model = logits_model
         
     def call(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
