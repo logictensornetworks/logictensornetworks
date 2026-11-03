@@ -68,8 +68,8 @@ class TestFromLogits(unittest.TestCase):
                 P = core.Predicate.FromLogits(self.logits_model, activation_function=activation)
                 self.assertIs(P.logits_model, self.logits_model)
                 self.assertEqual(
-                    [v.ref() for v in P.trainable_variables],
-                    [v.ref() for v in self.logits_model.trainable_variables])
+                    [id(v) for v in P.trainable_variables],
+                    [id(v) for v in self.logits_model.trainable_variables])
 
     def test_gradients_reach_logits_model(self):
         P = core.Predicate.FromLogits(self.logits_model, activation_function="softmax")
