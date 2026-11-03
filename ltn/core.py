@@ -144,7 +144,7 @@ def _flatten_free_dims(
     return exprs
 
 def _as_shape(shape: Union[int, List[int]]) -> tuple:
-    """Keras (with TF >= 2.20) only accepts tuples as input shapes; also accept a single int."""
+    """Keras 3 only accepts tuples as input shapes; also accept a single int."""
     return tuple(shape) if isinstance(shape, (list, tuple)) else (shape,)
 
 class _Model:
