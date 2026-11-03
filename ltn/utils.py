@@ -27,6 +27,7 @@ def Pred_equal_smooth_exp(alpha=1):
     """
     Returns a 2-ary LTN predicate. It returns exp(-alpha*d(u,v)), where d(u,v) is the
     Euclidean distance between u and v.
+    NOTE: this has zero gradient when u and v are strictly equal.
     """
     return ltn.Predicate.Lambda(
             lambda args: tf.exp(-alpha*_euclidean_distance(args[0],args[1]))
@@ -36,6 +37,7 @@ def Pred_equal_smooth_inv(alpha=1):
     """
     Returns a 2-ary LTN predicate. It returns 1/(1+alpha*d(u,v)), where d(u,v) is the
     Euclidean distance between u and v.
+    NOTE: this has zero gradient when u and v are strictly equal.
     """
     return ltn.Predicate.Lambda(
             lambda args: 1/(1+alpha*_euclidean_distance(args[0],args[1]))
