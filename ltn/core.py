@@ -98,15 +98,15 @@ class Variable(Term):
 class Constant(Term):
     def __init__(self, value: FloatTensorLike, trainable: bool) -> None:
         self._trainable = trainable
-        if self._trainable:
-            tensor = tf.Variable(value, trainable=True, dtype=tf.float32)
-        else:
-            try:
-                tensor = tf.constant(value, dtype=tf.float32)
-            except TypeError:
-                tensor = tf.convert_to_tensor(tf.cast(value,tf.float32), dtype=tf.float32)
+        try:
+            tensor = tf.constant(value, dtype=tf.float32)
+        except TypeError:
+            tensor = tf.convert_to_tensor(tf.cast(value,tf.float32), dtype=tf.float32)
         if len(tensor.shape) == 0: # ensure feature dims
             tensor = tensor[tf.newaxis]
+        if self._trainable:
+            # create the variable last: indexing a variable returns a tensor, which cannot be trained
+            tensor = tf.Variable(tensor, trainable=True)
         free_vars = []
         super().__init__(tensor, free_vars=free_vars)
 
@@ -420,14 +420,19 @@ class Wrapper_Quantifier:
                             + [var for var in mask.free_vars if var in aggreg_vars])            # to keep other dims in the ragged result 
             wff = broadcast_wff_and_mask(wff, mask)
             mask.tensor = tf.cast(mask.tensor, tf.bool)
-            t_ragged_wff = tf.ragged.boolean_mask(wff.tensor, mask.tensor)
             aggreg_axes = [wff.free_vars.index(var) for var in aggreg_vars]
-            t_result = self.aggreg_op(t_ragged_wff, axis=aggreg_axes, **kwargs)
-            if isinstance(t_result, tf.RaggedTensor):
-                t_result = t_result.to_tensor()
-            
-            aggreg_axes_in_mask = [mask.free_vars.index(var) for var in aggreg_vars 
+            aggreg_axes_in_mask = [mask.free_vars.index(var) for var in aggreg_vars
                     if var in mask.free_vars]
+            if aggreg_axes_in_mask:
+                t_ragged_wff = tf.ragged.boolean_mask(wff.tensor, mask.tensor)
+                t_result = self.aggreg_op(t_ragged_wff, axis=aggreg_axes, **kwargs)
+                if isinstance(t_result, tf.RaggedTensor):
+                    t_result = t_result.to_tensor()
+            else:
+                # The mask only guards free vars of the result, so the quantified vars keep their whole domain.
+                # (`boolean_mask` would compact the last axis of the mask, which is then a free var of the result.)
+                t_result = self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs)
+
             non_empty_vars = tf.reduce_sum(tf.cast(mask.tensor,tf.int32), axis=aggreg_axes_in_mask) != 0
             # the result has the free vars of the mask first, then those of the wff only;
             # add trailing axes so that non_empty_vars broadcasts over the latter
@@ -498,7 +503,9 @@ class _SigmoidTfModel(tf.keras.Model):
         """ with_class_indexing: If true, must have last axis (-1) for indexing classes.
         logits_model : must accept list of inputs
          """
-        super().__init__()
+        # the name Keras 3 derives from the private class name, "__sigmoid_tf_model",
+        # is not a valid name scope inside a `tf.function`
+        super().__init__(name="sigmoid_tf_model")
         self.logits_model = logits_model
         self.call = self._call_with_class_indexing if with_class_indexing else self._call_without_class_indexing
 
@@ -523,7 +530,7 @@ class _SigmoidTfModel(tf.keras.Model):
 class _SoftmaxTfModel(tf.keras.Model):
     def __init__(self, logits_model: tf.keras.Model, **kwargs: Any) -> None:
         """ logits_model: Must have last axis for classes, even if only one class. """
-        super().__init__()
+        super().__init__(name="softmax_tf_model") # see _SigmoidTfModel
         self.logits_model = logits_model
         
     def call(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
