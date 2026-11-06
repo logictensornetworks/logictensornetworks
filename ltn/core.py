@@ -529,7 +529,21 @@ class Wrapper_Quantifier:
             t_result = tf.where(non_empty_vars, t_result, empty_semantics)
         else:
             aggreg_axes = [wff.free_vars.index(var) for var in aggreg_vars]
-            t_result = self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs)
+            empty_domain = tf.reduce_any(tf.gather(tf.shape(wff.tensor), aggreg_axes) == 0)
+            empty_semantics = 1.0 if self.semantics == "forall" else 0.0
+            # Do not evaluate the aggregator on an empty domain: even replacing
+            # its NaN result afterwards can leave NaN gradients. The empty sum
+            # preserves the result shape and a zero gradient to the input.
+            t_result = tf.cond(
+                empty_domain,
+                lambda: (
+                    tf.reduce_sum(
+                        wff.tensor, axis=aggreg_axes, keepdims=kwargs.get("keepdims", False)
+                    )
+                    + tf.cast(empty_semantics, wff.tensor.dtype)
+                ),
+                lambda: self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs),
+            )
         free_vars_remaining = [var for var in wff.free_vars if var not in aggreg_vars]
         result = Formula(t_result, free_vars_remaining)
         undiag(*variables)
@@ -569,6 +583,7 @@ def transpose_free_vars(
     expr: Expression, new_var_order: list[VarLabel], in_place: bool = False
 ) -> Expression:
     perm = [expr.free_vars.index(var) for var in new_var_order]
+    perm.extend(range(len(expr.free_vars), len(expr.tensor.shape)))
     if not in_place:
         expr = expr._copy()
     expr.tensor = tf.transpose(expr.tensor, perm)
@@ -596,7 +611,7 @@ class _SigmoidTfModel(tf.keras.Model):
     def _call_without_class_indexing(
         self, inputs: list[tf.Tensor], *args: Any, **kwargs: Any
     ) -> tf.Tensor:
-        logit = self.logits_model(inputs)
+        logit = self.logits_model(inputs, *args, **kwargs)
         truth_degree = tf.math.sigmoid(logit)
         return truth_degree
 
@@ -605,7 +620,7 @@ class _SigmoidTfModel(tf.keras.Model):
     ) -> tf.Tensor:
         """inputs[-1] are the classes to index"""
         logits_model_inputs, indices = inputs[:-1], inputs[-1]
-        logits = self.logits_model(logits_model_inputs)
+        logits = self.logits_model(logits_model_inputs, *args, **kwargs)
         truth_degrees = tf.math.sigmoid(logits)
         indices = tf.cast(indices, tf.int32)
         return tf.gather_nd(truth_degrees, indices, batch_dims=1)
@@ -624,7 +639,7 @@ class _SoftmaxTfModel(tf.keras.Model):
     def call(self, inputs: list[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
         """inputs[-1] are the classes to index"""
         logits_model_inputs, indices = inputs[:-1], inputs[-1]
-        logits = self.logits_model(logits_model_inputs)
+        logits = self.logits_model(logits_model_inputs, *args, **kwargs)
         truth_degrees = tf.nn.softmax(logits)
         indices = tf.cast(indices, tf.int32)
         return tf.gather_nd(truth_degrees, indices, batch_dims=1)
