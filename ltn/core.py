@@ -510,49 +510,54 @@ def transpose_free_vars(
     return expr
 
 
-class _SigmoidTfModel(tf.keras.Model):
-    def __init__(self, logits_model: tf.keras.Model, with_class_indexing: bool = False, **kwargs: Any) -> None:
-        """ with_class_indexing: If true, must have last axis (-1) for indexing classes.
-        logits_model : must accept list of inputs
-         """
-        # the name Keras 3 derives from the private class name, "__sigmoid_tf_model",
-        # is not a valid name scope inside a `tf.function`
-        super().__init__(name="sigmoid_tf_model")
+class _FromLogitsModel(tf.keras.Model):
+    def __init__(self, logits_model: tf.keras.Model, activation: Callable,
+            with_class_indexing: bool, name: str) -> None:
+        # Explicit names avoid the leading underscores Keras 3 derives from
+        # private class names, which are invalid root scopes in tf.function.
+        super().__init__(name=name)
         self.logits_model = logits_model
-        self.call = self._call_with_class_indexing if with_class_indexing else self._call_without_class_indexing
+        self.activation = activation
+        self.with_class_indexing = with_class_indexing
 
-    def _call_without_class_indexing(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
-        logit = self.logits_model(inputs, *args, **kwargs)
-        truth_degree = tf.math.sigmoid(logit)    
-        return truth_degree
+    def __call__(self, inputs, *args, **kwargs):
+        # Keep the public calling convention, but give Keras a non-variadic
+        # call signature. Its automatic build trace otherwise replays *args
+        # and **kwargs as literal keywords instead of unpacking them.
+        if '_ltn_args' in kwargs and '_ltn_kwargs' in kwargs:
+            # Functional models replay the already-packed Keras node inputs.
+            return super().__call__(inputs, *args, **kwargs)
+        context_kwargs = {}
+        if 'training' in kwargs:
+            context_kwargs['training'] = kwargs.pop('training')
+        # Omission must stay omission: passing training=None here would clear
+        # an enclosing model's training context in Keras 3.
+        return super().__call__(inputs, _ltn_args=args, _ltn_kwargs=kwargs, **context_kwargs)
 
-    def _call_with_class_indexing(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
-        """ inputs[-1] are the classes to index """
-        logits_model_inputs, indices = inputs[:-1], inputs[-1]
-        logits = self.logits_model(logits_model_inputs, *args, **kwargs)
-        truth_degrees = tf.math.sigmoid(logits)
-        indices = tf.cast(indices, tf.int32)
-        return tf.gather_nd(truth_degrees, indices, batch_dims=1)
+    def call(self, inputs, _ltn_args=(), _ltn_kwargs=None, training=None):
+        logits_inputs = inputs[:-1] if self.with_class_indexing else inputs
+        model_kwargs = dict(_ltn_kwargs or {})
+        if training is not None:
+            model_kwargs['training'] = training
+        logits = self.logits_model(logits_inputs, *_ltn_args, **model_kwargs)
+        truth_degrees = self.activation(logits)
+        if self.with_class_indexing:
+            indices = tf.cast(inputs[-1], tf.int32)
+            return tf.gather_nd(truth_degrees, indices, batch_dims=1)
+        return truth_degrees
 
     @property
     def trainable_variables(self) -> list[tf.Variable]:
         return self.logits_model.trainable_variables
 
 
-class _SoftmaxTfModel(tf.keras.Model):
+class _SigmoidTfModel(_FromLogitsModel):
+    def __init__(self, logits_model: tf.keras.Model, with_class_indexing: bool = False, **kwargs: Any) -> None:
+        """logits_model must accept a list of inputs; the final input optionally indexes classes."""
+        super().__init__(logits_model, tf.math.sigmoid, with_class_indexing, name="sigmoid_tf_model")
+
+
+class _SoftmaxTfModel(_FromLogitsModel):
     def __init__(self, logits_model: tf.keras.Model, **kwargs: Any) -> None:
         """ logits_model: Must have last axis for classes, even if only one class. """
-        super().__init__(name="softmax_tf_model") # see _SigmoidTfModel
-        self.logits_model = logits_model
-        
-    def call(self, inputs: List[tf.Tensor], *args: Any, **kwargs: Any) -> tf.Tensor:
-        """ inputs[-1] are the classes to index """
-        logits_model_inputs, indices = inputs[:-1], inputs[-1]
-        logits = self.logits_model(logits_model_inputs, *args, **kwargs)
-        truth_degrees = tf.nn.softmax(logits)
-        indices = tf.cast(indices, tf.int32)
-        return tf.gather_nd(truth_degrees, indices, batch_dims=1)
-    
-    @property
-    def trainable_variables(self) -> list[tf.Variable]:
-        return self.logits_model.trainable_variables
+        super().__init__(logits_model, tf.nn.softmax, True, name="softmax_tf_model")
