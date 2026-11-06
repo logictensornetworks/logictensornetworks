@@ -13,7 +13,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "optional-dependencies"]
 keywords=["machine-learning","framework","neural-symbolic-computing","fuzzy-logic","tensorflow"]
 classifiers=[
     "Development Status :: 5 - Production/Stable",
