@@ -51,6 +51,11 @@ If you need the dependencies used in the examples, run:
 pip install ltn[examples]
 ```
 
+If you want to read logic written as text, such as [TPTP](https://tptp.org) problems (see [ltn/parser](ltn/parser/README.md)), run:
+```
+pip install ltn[parser]
+```
+
 For the latest development version, clone the github repository and install it locally (with or without dependency modifier).
 ```
 pip install -e <local project path>
@@ -63,6 +68,7 @@ Building from source requires setuptools 77 or newer. pip fetches it automatical
 - `ltn/core.py` -- core system for defining constants, variables, predicates, functions and formulas,
 - `ltn/fuzzy_ops.py` -- a collection of fuzzy logic operators defined using Tensorflow primitives,
 - `ltn/utils.py` -- a collection of useful functions,
+- `ltn/parser/` -- reads logic written as text, such as TPTP problems, into LTN objects,
 - `tutorials/` -- tutorials to start with LTN,
 - `examples/` -- various problems approached using LTN,
 - `test/` -- tests, run with `python -m pytest test`.

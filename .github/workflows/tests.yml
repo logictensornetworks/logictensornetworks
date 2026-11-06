@@ -50,6 +50,7 @@ jobs:
         cache: pip
         cache-dependency-path: |
           requirements.txt
+          requirements-parser.txt
           pyproject.toml
     - name: Install dependencies
       run: |
@@ -57,7 +58,7 @@ jobs:
         if [ "${{ matrix.tensorflow }}" != "latest" ]; then
           python -m pip install "tensorflow==${{ matrix.tensorflow }}"
         fi
-        python -m pip install -e . pytest
+        python -m pip install -e ".[parser]" pytest
         python -c "import tensorflow as tf, keras; print('tensorflow', tf.__version__, '| keras', keras.__version__)"
     - name: Run tests
       run: python -m pytest test -v

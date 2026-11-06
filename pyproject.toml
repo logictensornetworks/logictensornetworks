@@ -31,6 +31,10 @@ classifiers=[
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 optional-dependencies.examples = {file = ["requirements-examples.txt"]}
+optional-dependencies.parser = {file = ["requirements-parser.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["ltn"]
+include = ["ltn*"]
+
+[tool.setuptools.package-data]
+"ltn.parser" = ["*.lark"]
