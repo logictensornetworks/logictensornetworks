@@ -71,6 +71,16 @@ class TestFromLogits(unittest.TestCase):
                     [id(v) for v in P.trainable_variables],
                     [id(v) for v in self.logits_model.trainable_variables])
 
+    def test_in_tf_function(self):
+        """Keras 3 rejected the default model names (leading underscore) as name scopes in a tf.function."""
+        for activation in ["sigmoid","softmax"]:
+            with self.subTest(activation=activation):
+                P = core.Predicate.FromLogits(self.logits_model, activation_function=activation)
+                @tf.function
+                def truth_values():
+                    return P([self.x, self.l]).tensor
+                self.assertTrue(array_allclose(truth_values(), P([self.x, self.l]).tensor))
+
     def test_gradients_reach_logits_model(self):
         P = core.Predicate.FromLogits(self.logits_model, activation_function="softmax")
         with tf.GradientTape() as tape:
