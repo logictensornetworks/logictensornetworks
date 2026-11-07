@@ -54,7 +54,7 @@ Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(p=2),semantics="exist
 def axioms(x_data, y_data):
     x = ltn.Variable("x", x_data)
     y = ltn.Variable("y", y_data)
-    return Forall(ltn.diag(x,y), eq([f(x),y]))
+    return Forall(ltn.diag(x,y), eq([f(x),y])).tensor
 
 # Initialize all layers and the static graph
 for x, y in ds_test:
