@@ -22,7 +22,7 @@ import tensorflow as tf
 import ltn
 
 pytest.importorskip("lark")
-from ltn.parser import Theory, tptp
+from ltn.parser import Grounding, tptp
 
 from . import test_tptp as tables
 
@@ -50,16 +50,16 @@ def parameters(monkeypatch) -> list[tf.Variable]:
     return variables
 
 
-def read(program: str, **options) -> Theory:
+def read(program: str, **options) -> Grounding:
     """The reader's interpretation of `program`. The default equality is `exp(-1. * d)`, and Eq is
     `exp(-d)`: they have the same value, which test_tptp.py checks, but not the same operations."""
-    theory = tables.read(program, **options)
-    theory.predicates["="] = tables.Eq
-    return theory
+    grounding = tables.read(program, **options)
+    grounding.predicates["="] = tables.Eq
+    return grounding
 
 
-def reader_column(theory: Theory, tape: tf.GradientTape) -> list[tf.Tensor]:
-    return [theory.evaluate(statement.formula, tape=tape).tensor for statement in theory.problem.statements]
+def reader_column(grounding: Grounding, tape: tf.GradientTape) -> list[tf.Tensor]:
+    return [grounding.evaluate(statement.formula, tape=tape).tensor for statement in grounding.problem.statements]
 
 
 def core_column(core, program: str, tape: tf.GradientTape, monkeypatch) -> list[tf.Tensor]:
@@ -139,8 +139,8 @@ def test_fingerprint_tells_graphs_apart(parameters):
 @pytest.mark.parametrize("name", tables.PROGRAMS)
 def test_graph_matches_core_definition(name, parameters, monkeypatch):
     program, core = tables.PROGRAMS[name]
-    theory = read(program)
-    assert graph_of(lambda tape: reader_column(theory, tape)) == graph_of(lambda tape: core_column(core, program, tape, monkeypatch))
+    grounding = read(program)
+    assert graph_of(lambda tape: reader_column(grounding, tape)) == graph_of(lambda tape: core_column(core, program, tape, monkeypatch))
 
 
 def test_graph_with_function_terms(parameters):
@@ -150,8 +150,8 @@ def test_graph_with_function_terms(parameters):
         u = ltn.Variable.from_constants("X", [a, b, c, F(a), F(b), F(c)], tape=tape)
         return [Forall(u, P(F(u))).tensor]
 
-    theory = read("fof(test, axiom, ! [X] : p(f(X))).", herbrand_depth=1)
-    assert graph_of(lambda tape: reader_column(theory, tape)) == graph_of(core)
+    grounding = read("fof(test, axiom, ! [X] : p(f(X))).", herbrand_depth=1)
+    assert graph_of(lambda tape: reader_column(grounding, tape)) == graph_of(core)
 
 
 # 2. Gradients
@@ -159,8 +159,8 @@ def test_graph_with_function_terms(parameters):
 @pytest.mark.parametrize("name", tables.PROGRAMS)
 def test_gradients_match_core_definition(name, parameters, monkeypatch):
     program, core = tables.PROGRAMS[name]
-    theory = read(program)
-    assert_same_gradients(lambda tape: reader_column(theory, tape),
+    grounding = read(program)
+    assert_same_gradients(lambda tape: reader_column(grounding, tape),
                           lambda tape: core_column(core, program, tape, monkeypatch), parameters)
 
 
@@ -171,14 +171,14 @@ def test_gradients_with_function_terms(parameters):
         u = ltn.Variable.from_constants("X", [a, b, c, F(a), F(b), F(c)], tape=tape)
         return [Forall(u, P(F(u))).tensor]
 
-    theory = read("fof(test, axiom, ! [X] : p(f(X))).", herbrand_depth=1)
-    assert_same_gradients(lambda tape: reader_column(theory, tape), core, parameters)
+    grounding = read("fof(test, axiom, ! [X] : p(f(X))).", herbrand_depth=1)
+    assert_same_gradients(lambda tape: reader_column(grounding, tape), core, parameters)
 
 
 def test_variables_carry_gradients_to_the_constants(parameters):
-    theory = read("fof(test, axiom, ! [X] : p(X)).")
+    grounding = read("fof(test, axiom, ! [X] : p(X)).")
     with tf.GradientTape() as tape:
-        truth = theory.evaluate(theory.problem.statements[0].formula, tape=tape).tensor
+        truth = grounding.evaluate(grounding.problem.statements[0].formula, tape=tape).tensor
     a, b, c = tape.gradient(truth, parameters[:3])
     assert a is not None and b is not None and c is not None
     assert all(tf.reduce_any(gradient != 0.) for gradient in (a, b, c))
@@ -203,19 +203,19 @@ SIZE = 4
 STEPS = 25
 
 
-def by_hand(theory: Theory):
-    """Returns the parameters of PROBLEM, in the order of theory.trainable_variables, a function that
+def by_hand(grounding: Grounding):
+    """Returns the parameters of PROBLEM, in the order of grounding.trainable_variables, a function that
     computes the satisfaction of its axioms, and a function that computes the query QUERY."""
-    a, b, c = [ltn.Constant(theory.constants[name].tensor, trainable=True) for name in "abc"]
-    s, t = [ltn.Proposition(float(theory.propositions[name].tensor), trainable=True) for name in "st"]
+    a, b, c = [ltn.Constant(grounding.constants[name].tensor, trainable=True) for name in "abc"]
+    s, t = [ltn.Proposition(float(grounding.propositions[name].tensor), trainable=True) for name in "st"]
     f, h = ltn.Function.MLP([SIZE], SIZE), ltn.Function.MLP([SIZE], SIZE)
     g = ltn.Function.MLP([SIZE, SIZE], SIZE)
     p, w = ltn.Predicate.MLP([SIZE]), ltn.Predicate.MLP([SIZE])
     q = ltn.Predicate.MLP([SIZE, SIZE])
     for symbol, name in ((f, "f"), (g, "g"), (h, "h")):
-        symbol.model.set_weights(theory.functions[name].model.get_weights())
+        symbol.model.set_weights(grounding.functions[name].model.get_weights())
     for symbol, name in ((p, "p"), (q, "q"), (w, "w")):
-        symbol.model.set_weights(theory.predicates[name].model.get_weights())
+        symbol.model.set_weights(grounding.predicates[name].model.get_weights())
     Not, Or, Implies, Forall, Eq = tables.Not, tables.Or, tables.Implies, tables.Forall, tables.Eq
 
     def sat(tape):
@@ -236,65 +236,65 @@ def by_hand(theory: Theory):
 # 3. Groundings
 
 def test_each_symbol_gets_one_grounding():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE)
-    assert sorted(theory.constants) == ["a", "b", "c"]
-    assert sorted(theory.propositions) == ["s", "t"]
-    assert sorted(theory.functions) == ["f", "g", "h"]
-    assert sorted(theory.predicates) == ["=", "p", "q", "w"]
-    assert all(isinstance(constant, ltn.Constant) for constant in theory.constants.values())
-    assert all(isinstance(proposition, ltn.Proposition) for proposition in theory.propositions.values())
-    assert all(isinstance(function, ltn.Function) for function in theory.functions.values())
-    assert all(isinstance(predicate, ltn.Predicate) for predicate in theory.predicates.values())
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    assert sorted(grounding.constants) == ["a", "b", "c"]
+    assert sorted(grounding.propositions) == ["s", "t"]
+    assert sorted(grounding.functions) == ["f", "g", "h"]
+    assert sorted(grounding.predicates) == ["=", "p", "q", "w"]
+    assert all(isinstance(constant, ltn.Constant) for constant in grounding.constants.values())
+    assert all(isinstance(proposition, ltn.Proposition) for proposition in grounding.propositions.values())
+    assert all(isinstance(function, ltn.Function) for function in grounding.functions.values())
+    assert all(isinstance(predicate, ltn.Predicate) for predicate in grounding.predicates.values())
 
 
 def test_groundings_have_the_right_size():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE)
-    assert all(constant.tensor.shape == (SIZE,) for constant in theory.constants.values())
-    assert [len(symbol.model.inputs) for symbol in (theory.functions["f"], theory.functions["g"])] == [1, 2]
-    assert [len(symbol.model.inputs) for symbol in (theory.predicates["p"], theory.predicates["q"])] == [1, 2]
-    a, b = theory.constants["a"], theory.constants["b"]
-    assert theory.functions["g"]([a, b]).tensor.shape == (SIZE,)
-    assert theory.predicates["q"]([a, b]).tensor.shape == ()
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    assert all(constant.tensor.shape == (SIZE,) for constant in grounding.constants.values())
+    assert [len(symbol.model.inputs) for symbol in (grounding.functions["f"], grounding.functions["g"])] == [1, 2]
+    assert [len(symbol.model.inputs) for symbol in (grounding.predicates["p"], grounding.predicates["q"])] == [1, 2]
+    a, b = grounding.constants["a"], grounding.constants["b"]
+    assert grounding.functions["g"]([a, b]).tensor.shape == (SIZE,)
+    assert grounding.predicates["q"]([a, b]).tensor.shape == ()
 
 
 def test_all_parameters_are_trainable_variables():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE)
-    expected, _, _ = by_hand(theory)
-    parameters = theory.trainable_variables
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    expected, _, _ = by_hand(grounding)
+    parameters = grounding.trainable_variables
     assert all(parameter.trainable for parameter in parameters)
     assert len({id(parameter) for parameter in parameters}) == len(parameters)
     assert [parameter.shape for parameter in parameters] == [parameter.shape for parameter in expected]
 
 
 def test_extra_individuals_are_trainable_and_in_the_domain():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE, extra_individuals=2)
-    assert theory.domain == ["a", "b", "c", "_individual0", "_individual1"]
-    assert len(theory.individuals()) == 5
-    parameters = {id(parameter) for parameter in theory.trainable_variables}
-    assert all(id(constant.tensor) in parameters for constant in theory.constants.values())
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE, extra_individuals=2)
+    assert grounding.domain == ["a", "b", "c", "_individual0", "_individual1"]
+    assert len(grounding.individuals()) == 5
+    parameters = {id(parameter) for parameter in grounding.trainable_variables}
+    assert all(id(constant.tensor) in parameters for constant in grounding.constants.values())
 
 
 def test_equality_has_no_parameters():
-    theory = Theory(tptp.parse("fof(test, axiom, a = b)."))
-    assert len(theory.trainable_variables) == 2
+    grounding = Grounding(tptp.parse("fof(test, axiom, a = b)."))
+    assert len(grounding.trainable_variables) == 2
 
 
 # 4. Training
 
-def assert_same_parameters(theory, expected_parameters, before):
-    for parameter, expected, start in zip(theory.trainable_variables, expected_parameters, before, strict=True):
+def assert_same_parameters(grounding, expected_parameters, before):
+    for parameter, expected, start in zip(grounding.trainable_variables, expected_parameters, before, strict=True):
         assert parameter.numpy() == pytest.approx(expected.numpy(), abs=1e-3)
         assert (parameter.numpy() != start).any()  # every parameter moved
 
 
 def test_first_gradient_matches_the_hand_written_program():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE)
-    expected_parameters, expected_sat, _ = by_hand(theory)
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    expected_parameters, expected_sat, _ = by_hand(grounding)
     with tf.GradientTape(persistent=True) as tape:
-        sat = theory.sat(tape=tape)
+        sat = grounding.sat(tape=tape)
         other = expected_sat(tape)
     assert float(sat) == pytest.approx(float(other), abs=1e-5)
-    gradients = tape.gradient(sat, theory.trainable_variables)
+    gradients = tape.gradient(sat, grounding.trainable_variables)
     expected = tape.gradient(other, expected_parameters)
     assert all(gradient is not None for gradient in gradients)
     for gradient, other_gradient in zip(gradients, expected, strict=True):
@@ -302,10 +302,10 @@ def test_first_gradient_matches_the_hand_written_program():
 
 
 def test_training_matches_the_hand_written_program():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE)
-    expected_parameters, expected_sat, _ = by_hand(theory)
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    expected_parameters, expected_sat, _ = by_hand(grounding)
     optimizer = tf.keras.optimizers.Adam(0.01)
-    before = [parameter.numpy().copy() for parameter in theory.trainable_variables]
+    before = [parameter.numpy().copy() for parameter in grounding.trainable_variables]
 
     @tf.function
     def step():
@@ -319,15 +319,15 @@ def test_training_matches_the_hand_written_program():
     for _ in range(STEPS):
         sat = step()
 
-    assert theory.train(STEPS) == pytest.approx(float(sat), abs=1e-4)
-    assert_same_parameters(theory, expected_parameters, before)
+    assert grounding.train(STEPS) == pytest.approx(float(sat), abs=1e-4)
+    assert_same_parameters(grounding, expected_parameters, before)
 
 
 def test_refutation_matches_the_hand_written_program():
-    theory = Theory(tptp.parse(PROBLEM), embedding_size=SIZE)
-    expected_parameters, expected_sat, query = by_hand(theory)
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    expected_parameters, expected_sat, query = by_hand(grounding)
     optimizer = tf.keras.optimizers.Adam(0.01)
-    before = [parameter.numpy().copy() for parameter in theory.trainable_variables]
+    before = [parameter.numpy().copy() for parameter in grounding.trainable_variables]
 
     @tf.function
     def step():
@@ -342,11 +342,11 @@ def test_refutation_matches_the_hand_written_program():
     for _ in range(STEPS):
         sat, truth = step()
 
-    assert theory.refute(QUERY, steps=STEPS) == pytest.approx((float(sat), float(truth)), abs=1e-4)
-    assert_same_parameters(theory, expected_parameters, before)
+    assert grounding.refute(QUERY, steps=STEPS) == pytest.approx((float(sat), float(truth)), abs=1e-4)
+    assert_same_parameters(grounding, expected_parameters, before)
 
 
 def test_propositions_stay_truth_values_during_training():
-    theory = Theory(tptp.parse("fof(test, axiom, s)."))
-    theory.train(200)
-    assert 0. <= float(theory.propositions["s"].tensor) <= 1.
+    grounding = Grounding(tptp.parse("fof(test, axiom, s)."))
+    grounding.train(200)
+    assert 0. <= float(grounding.propositions["s"].tensor) <= 1.

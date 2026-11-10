@@ -4,7 +4,7 @@
 // https://github.com/TPTPWorld/SyntaxBNF, so that the two can be read side by side. This file has
 // its syntactic rules (::=) for FOF and CNF. Differences:
 //
-// - tptp_ltn.py applies the semantic rules (:==), such as the list of roles.
+// - tptp.py applies the semantic rules (:==), such as the list of roles.
 // - Rules that only rename another rule are merged, for example <constant> and <functor>.
 // - $true and $false are tokens here, which applies their semantic rule: they are formulas, so
 //   they take no arguments and are not terms.

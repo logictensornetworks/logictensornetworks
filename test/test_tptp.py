@@ -14,7 +14,7 @@ meaning.
 
 What counts as valid TPTP comes from the official grammar, SyntaxBNF v9.3.1.6, in
 https://github.com/TPTPWorld/SyntaxBNF. The tests only call `tptp.parse`, `tptp.parse_formula` and
-`Theory`, so they keep working if the parser is replaced. test_tptp_graph.py uses the same tables to
+`Grounding`, so they keep working if the parser is replaced. test_tptp_graph.py uses the same tables to
 test the LTN graph that the reader builds.
 """
 import functools
@@ -27,7 +27,7 @@ import tensorflow as tf
 import ltn
 
 pytest.importorskip("lark")
-from ltn.parser import Theory, tptp
+from ltn.parser import Grounding, tptp
 
 # ------------------------------------------------------------------------------- The grounding
 # Both columns of the tables use these objects, the left column through the reader and the right
@@ -81,16 +81,16 @@ PREDICATES = {"p": P, "q": Q, "r": R, "w": W, "smokes": P, "cancer": Q, "friends
 FUNCTIONS = {"f": F, "g": G}
 
 
-def read(program: str, **options) -> Theory:
+def read(program: str, **options) -> Grounding:
     """The reader's interpretation of `program` under the grounding above. Only equality and the
     operators keep the reader's defaults."""
-    theory = Theory(tptp.parse(program), **options)
-    theory.constants = CONSTANTS
-    theory.domain = ["a", "b", "c"]
-    theory.propositions = PROPOSITIONS
-    theory.functions = {name: FUNCTIONS[name] for name in theory.functions}
-    theory.predicates.update({name: PREDICATES[name] for name in theory.predicates if name != "="})
-    return theory
+    grounding = Grounding(tptp.parse(program), **options)
+    grounding.constants = CONSTANTS
+    grounding.domain = ["a", "b", "c"]
+    grounding.propositions = PROPOSITIONS
+    grounding.functions = {name: FUNCTIONS[name] for name in grounding.functions}
+    grounding.predicates.update({name: PREDICATES[name] for name in grounding.predicates if name != "="})
+    return grounding
 
 
 # ------------------------------------------------------------------------------ The programs
@@ -608,8 +608,8 @@ PROGRAMS = {name: (program, core) for name, program, core in programs()}
 
 def values_read_from(program: str, **options) -> list[float]:
     """The truth value that the reader gives to each statement of `program`."""
-    theory = read(program, **options)
-    return [float(theory.evaluate(statement.formula).tensor) for statement in theory.problem.statements]
+    grounding = read(program, **options)
+    return [float(grounding.evaluate(statement.formula).tensor) for statement in grounding.problem.statements]
 
 
 def values_of(*formulas):
@@ -671,8 +671,8 @@ def test_value_of_the_knowledge_base():
 
 
 def test_value_of_a_query():
-    theory = read("fof(test, axiom, p(a) & r(a, b)).")
-    assert [float(theory.evaluate("p(b) | r(b, a)").tensor)] == values_of(Or(P(b), R([b, a])))
+    grounding = read("fof(test, axiom, p(a) & r(a, b)).")
+    assert [float(grounding.evaluate("p(b) | r(b, a)").tensor)] == values_of(Or(P(b), R([b, a])))
 
 
 def test_value_of_a_long_chain():

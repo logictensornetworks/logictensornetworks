@@ -1,6 +1,6 @@
 """Turns a syntax tree into LTN objects. It doesn't depend on the syntax the tree was read from.
 
-Formulas are parsed once into a syntax tree. Every call to `Theory.sat()` evaluates the tree again,
+Formulas are parsed once into a syntax tree. Every call to `Grounding.sat()` evaluates the tree again,
 so the LTN variables built from trainable constants are created while the caller's GradientTape is
 recording.
 """
@@ -23,11 +23,11 @@ def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
         lambda args: tf.exp(-alpha * tf.reduce_sum(tf.square(args[0] - args[1]), axis=1)))
 
 
-class Theory:
-    """Default groundings for the symbols of a problem: constants are trainable embeddings,
-    functions and predicates are MLPs, propositions are trainable truth values. Variables
-    range over the constants in `domain` and, with `herbrand_depth` > 0, over the functions
-    applied to them up to that depth. Every grounding can be replaced before training."""
+class Grounding:
+    """The default grounding of a problem: constants are trainable embeddings, functions and
+    predicates are MLPs, propositions are trainable truth values. Variables range over the
+    constants in `domain` and, with `herbrand_depth` > 0, over the functions applied to them up
+    to that depth. Every part of it can be replaced before training."""
 
     def __init__(self, problem: Problem, embedding_size: int = 8, extra_individuals: int = 0,
                  herbrand_depth: int = 0) -> None:

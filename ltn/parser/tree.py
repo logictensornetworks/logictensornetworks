@@ -1,4 +1,4 @@
-"""The syntax tree. Every syntax reads text into this tree, and `Theory` turns it into LTN objects."""
+"""The syntax tree. Every syntax reads text into this tree, and `Grounding` turns it into LTN objects."""
 from __future__ import annotations
 
 import dataclasses
