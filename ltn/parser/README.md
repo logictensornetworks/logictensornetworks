@@ -24,6 +24,8 @@ print(float(grounding.evaluate("mortal(socrates)").tensor))
 
 `Grounding` gives every symbol a default: constants are trainable embeddings, functions and predicates are MLPs, and propositions are trainable truth values. Replace any of them before training, for example with `grounding.predicates["man"] = ...`. Variables range over the constants of the problem, and also over function terms with `Grounding(problem, herbrand_depth=1)`.
 
+Every call to `grounding.train` builds a new TensorFlow graph, which takes a while on a large problem. If you call it repeatedly, for example to log between calls, `grounding.train(10, reuse_graph=True)` keeps the graph and the optimizer. That also changes the results, because the optimizer's state carries on. Use it only if you are sure that the graph hasn't changed: a kept graph sees new values of constants and weights, but it silently ignores a new predicate, connective or domain, and the other things listed in the docstring of `Grounding.train`.
+
 `tptp.parse` raises `SyntaxError` if the text is not valid TPTP, and `NotImplementedError` if it is valid TPTP that the reader doesn't support, such as `include` or the `tff` and `thf` languages.
 
 ## Adding a syntax

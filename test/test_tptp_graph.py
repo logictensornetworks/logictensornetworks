@@ -13,6 +13,8 @@ value stays the same. So this file looks at what the reader builds, in four ways
 
 Tests 1 and 2 use the tables of test_tptp.py, so they add nothing new to review. The only new thing
 to review is the pair PROBLEM and by_hand(), under "A whole problem".
+
+The last section tests `train(reuse_graph=True)`, which keeps the graph between calls.
 """
 import hashlib
 
@@ -350,3 +352,127 @@ def test_propositions_stay_truth_values_during_training():
     grounding = Grounding(tptp.parse("fof(test, axiom, s)."))
     grounding.train(200)
     assert 0. <= float(grounding.propositions["s"].tensor) <= 1.
+
+
+# ------------------------------------------------------------------ Keeping the graph between calls
+
+SMALL_PROBLEM = "fof(test, axiom, p(a))."
+
+
+def seeded_grounding() -> Grounding:
+    """The same grounding of PROBLEM every time, so that the results of training can be compared."""
+    tf.keras.utils.set_random_seed(0)
+    return Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+
+
+def same_parameters(first: Grounding, second: Grounding) -> bool:
+    return all(parameter.numpy() == pytest.approx(other.numpy(), abs=1e-6)
+               for parameter, other in zip(first.trainable_variables, second.trainable_variables, strict=True))
+
+
+def count_traces(grounding: Grounding) -> list:
+    """Returns a list that grows when `train` builds a graph, the only time a step calls `sat`. How
+    much it grows is not defined: TensorFlow traces twice if the optimizer creates its variables."""
+    traces = []
+    sat = grounding.sat
+
+    def counted_sat(*args, **kwargs):
+        traces.append(None)
+        return sat(*args, **kwargs)
+
+    grounding.sat = counted_sat
+    return traces
+
+
+def test_default_calls_do_not_share_an_optimizer():
+    twice, once = seeded_grounding(), seeded_grounding()
+    assert same_parameters(twice, once)
+    twice.train(5)
+    twice.train(5)
+    once.train(10)
+    assert not same_parameters(twice, once)
+
+
+def test_kept_graph_matches_a_single_call():
+    twice, once = seeded_grounding(), seeded_grounding()
+    twice.train(5, reuse_graph=True)
+    twice.train(5, reuse_graph=True)
+    once.train(10)
+    assert same_parameters(twice, once)
+
+
+def test_second_flagged_call_does_not_trace_again():
+    grounding = Grounding(tptp.parse(SMALL_PROBLEM), embedding_size=SIZE)
+    traces = count_traces(grounding)
+    optimizer = tf.keras.optimizers.Adam(0.01)
+    grounding.train(1, optimizer, reuse_graph=True)
+    built = len(traces)
+    assert built > 0
+    grounding.train(1, reuse_graph=True)
+    grounding.train(1, optimizer, reuse_graph=True)
+    assert len(traces) == built
+    assert int(optimizer.iterations) == 3
+
+
+def test_default_call_leaves_the_kept_graph_alone():
+    grounding = Grounding(tptp.parse(SMALL_PROBLEM), embedding_size=SIZE)
+    traces = count_traces(grounding)
+    optimizer = tf.keras.optimizers.Adam(0.01)
+    grounding.train(1, optimizer, reuse_graph=True)
+    kept = len(traces)
+    grounding.train(1)
+    rebuilt = len(traces)
+    assert rebuilt > kept
+    assert int(optimizer.iterations) == 1  # it started a new Adam
+    grounding.train(1, reuse_graph=True)
+    assert len(traces) == rebuilt
+    assert int(optimizer.iterations) == 2
+
+
+def test_different_optimizer_rebuilds_the_graph_and_is_kept():
+    grounding = Grounding(tptp.parse(SMALL_PROBLEM), embedding_size=SIZE)
+    traces = count_traces(grounding)
+    first, second = tf.keras.optimizers.Adam(0.01), tf.keras.optimizers.Adam(0.01)
+    grounding.train(1, first, reuse_graph=True)
+    built = len(traces)
+    grounding.train(2, second, reuse_graph=True)
+    rebuilt = len(traces)
+    assert rebuilt > built
+    grounding.train(1, reuse_graph=True)
+    assert len(traces) == rebuilt
+    assert (int(first.iterations), int(second.iterations)) == (1, 3)
+
+
+def test_failed_call_keeps_no_graph():
+    grounding = Grounding(tptp.parse(SMALL_PROBLEM), embedding_size=SIZE)
+    predicate = grounding.predicates.pop("p")
+    with pytest.raises(KeyError):
+        grounding.train(1, reuse_graph=True)
+    grounding.predicates["p"] = predicate  # a kept step would still train the parameters without it
+    before = [weight.numpy().copy() for weight in predicate.model.trainable_variables]
+    grounding.train(1, reuse_graph=True)
+    assert all((weight.numpy() != start).any()
+               for weight, start in zip(predicate.model.trainable_variables, before, strict=True))
+
+
+def test_kept_graph_sees_an_assign_to_a_constant():
+    grounding = Grounding(tptp.parse("fof(test, axiom, a = b)."), embedding_size=SIZE)
+    traces = count_traces(grounding)
+    a, b = grounding.constants["a"].tensor, grounding.constants["b"].tensor
+    a.assign(tf.zeros(SIZE))
+    b.assign(tf.ones(SIZE))
+    assert grounding.train(1, reuse_graph=True) < 0.1
+    built = len(traces)
+    a.assign(b)
+    assert grounding.train(1, reuse_graph=True) == pytest.approx(1., abs=1e-3)
+    assert len(traces) == built
+
+
+def test_kept_graph_does_not_see_a_new_predicate():
+    """A limit of the flag, and the reason why it is not the default."""
+    grounding = Grounding(tptp.parse(SMALL_PROBLEM), embedding_size=SIZE)
+    grounding.train(1, reuse_graph=True)
+    old_sat = float(grounding.sat())
+    grounding.predicates["p"] = ltn.Predicate.Lambda(lambda x: tf.ones_like(x[:, 0]))
+    assert float(grounding.sat()) == pytest.approx(1., abs=1e-3)
+    assert grounding.train(1, reuse_graph=True) == pytest.approx(old_sat, abs=1e-6)

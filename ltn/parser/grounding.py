@@ -93,8 +93,32 @@ class Grounding:
         individuals = self.individuals()
         return self.aggregator([self.evaluate(s.formula, tape, individuals) for s in statements]).tensor
 
-    def train(self, steps: int, optimizer: tf.keras.optimizers.Optimizer | None = None) -> float:
-        """Maximizes the satisfaction of the axioms. Returns the last satisfaction."""
+    def train(self, steps: int, optimizer: tf.keras.optimizers.Optimizer | None = None,
+              reuse_graph: bool = False) -> float:
+        """Maximizes the satisfaction of the axioms. Returns the last satisfaction.
+
+        By default each call builds a new graph, and a new Adam(0.01) if no optimizer is given. If
+        you call this repeatedly, for example to log between calls, `reuse_graph=True` saves the
+        time it takes to build the graph: the first call stores its graph and its optimizer on this
+        object, and later calls with the flag reuse both. If a later call with the flag passes a
+        different optimizer object, it builds a new graph with that one, because a graph is tied to
+        its optimizer. `optimizer=None` keeps the stored one.
+
+        The flag changes the results, not only the speed. Each call without it starts a new Adam,
+        so `train(5)` twice doesn't match `train(10)`. With the flag the optimizer's state carries
+        on and the two match exactly. Passing the same optimizer to two calls without the flag also
+        matches `train(10)`.
+
+        Only use the flag if you are sure that the graph hasn't changed. A kept graph picks up new
+        values of constants, propositions and network weights, through `assign` or training, and
+        the optimizer's learning rate, for example `optimizer.learning_rate = 0.5`. It silently
+        misses anything else and keeps using the old objects, with no error: the formulas, a new
+        network or constant object for a symbol, the domain, a new connective or quantifier, and
+        `p` inside a quantifier (about 0.8 in the kept graph and 0.5 in a new one, in one test).
+        To replace a kept graph after such a change, pass a different optimizer."""
+        kept_step, kept_optimizer = getattr(self, "_kept_step", (None, None))
+        if reuse_graph:
+            optimizer = optimizer or kept_optimizer
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
         params = self.trainable_variables
 
@@ -107,8 +131,12 @@ class Grounding:
             optimizer.apply_gradients([(g, p) for g, p in zip(grads, params) if g is not None])
             return sat
 
+        if reuse_graph and optimizer is kept_optimizer:
+            step = kept_step  # the new tf.function costs nothing: it has no graph until its first call
         for _ in range(steps):
             sat = step()
+        if reuse_graph:  # only now, so that a call that fails keeps nothing
+            self._kept_step = step, optimizer
         return float(sat)
 
     def refute(self, formula, q: float = 0.95, steps: int = 2000, alpha: float = 0.05, beta: float = 10.,
