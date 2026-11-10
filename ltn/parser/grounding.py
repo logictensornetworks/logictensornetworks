@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import itertools
+import sys
 import warnings
 
 import tensorflow as tf
@@ -26,8 +27,13 @@ def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
 class Grounding:
     """The default grounding of a problem: constants are trainable embeddings, functions and
     predicates are MLPs, propositions are trainable truth values. Variables range over the
-    constants in `domain` and, with `herbrand_depth` > 0, over the functions applied to them up
-    to that depth. Every part of it can be replaced before training."""
+    individuals in `domain` and, with `herbrand_depth` > 0, over the functions applied to them up
+    to that depth. Every part of it can be replaced before training.
+
+    Constants that the problem interprets as themselves, such as TPTP's numbers and distinct
+    objects, are one individual if their values are equal, so they share a grounding. An equation
+    between two of them is true or false according to their values, and `sat` includes the
+    implicit axiom that different values are unequal."""
 
     def __init__(self, problem: Problem, embedding_size: int = 8, extra_individuals: int = 0,
                  herbrand_depth: int = 0) -> None:
@@ -36,13 +42,21 @@ class Grounding:
         d = embedding_size
         names = [f for f, arity in problem.functions.items() if arity == 0]
         names += [f"_individual{i}" for i in range(extra_individuals)]
-        self.constants = {c: ltn.Constant(tf.random.uniform([d]), trainable=True) for c in names}
+        self.constants, self.domain, by_value = {}, [], {}
+        for name in names:
+            value = problem.values.get(name)
+            if value in by_value:  # an equal value is the same individual
+                self.constants[name] = by_value[value]
+                continue
+            self.constants[name] = ltn.Constant(tf.random.uniform([d]), trainable=True)
+            self.domain.append(name)
+            if value is not None:
+                by_value[value] = self.constants[name]
         self.functions = {f: ltn.Function.MLP([d] * n, d) for f, n in problem.functions.items() if n > 0}
         self.predicates = {p: ltn.Predicate.MLP([d] * n) for p, n in problem.predicates.items() if n > 0}
         self.predicates["="] = smooth_equality()
         self.propositions = {p: ltn.Proposition(0.5, trainable=True)
                              for p, n in problem.predicates.items() if n == 0}
-        self.domain = list(self.constants)
         self.Not = ltn.Wrapper_Connective(ltn.fuzzy_ops.Not_Std())
         self.connectives = {
             "&": ltn.Wrapper_Connective(ltn.fuzzy_ops.And_Prod()),
@@ -63,7 +77,7 @@ class Grounding:
         params += [p.tensor for p in self.propositions.values()]
         for symbol in itertools.chain(self.functions.values(), self.predicates.values()):
             params += symbol.model.trainable_variables
-        return params
+        return list({id(param): param for param in params}.values())  # equal values share a constant
 
     def individuals(self) -> list[ltn.core.Term]:
         """The individuals that variables range over. Call it inside the tape when training:
@@ -85,17 +99,33 @@ class Grounding:
             formula = self.problem.parse_formula(formula)
         if individuals is None:
             individuals = self.individuals()
-        return self._eval(formula, {}, lambda name: self._variable(name, individuals, tape))
+        try:
+            return self._eval(formula, {}, lambda name: self._variable(name, individuals, tape))
+        except RecursionError:
+            raise NotImplementedError(f"The formula is nested too deeply for Python's recursion limit "
+                                      f"({sys.getrecursionlimit()}).") from None
 
     def sat(self, statements: list[Statement] | None = None, tape: tf.GradientTape | None = None) -> tf.Tensor:
+        """The satisfaction of `statements`, by default the axioms, as one truth value. It includes
+        the implicit axiom that different values are unequal, and it is 1 if there is nothing to
+        satisfy."""
         if statements is None:
             statements = self.problem.with_role(*AXIOM_ROLES)
         individuals = self.individuals()
-        return self.aggregator([self.evaluate(s.formula, tape, individuals) for s in statements]).tensor
+        formulas = [self.evaluate(s.formula, tape, individuals) for s in statements]
+        distinct = self._distinct_values()
+        if distinct is not None:
+            formulas.append(distinct)
+        if not formulas:
+            return tf.constant(1.)
+        return self.aggregator(formulas).tensor
 
     def train(self, steps: int, optimizer: tf.keras.optimizers.Optimizer | None = None,
-              reuse_graph: bool = False) -> float:
-        """Maximizes the satisfaction of the axioms. Returns the last satisfaction.
+              reuse_graph: bool = False, statements: list[Statement] | None = None) -> float:
+        """Maximizes the satisfaction of `statements`, by default the axioms, as `sat` computes it.
+        Returns the last satisfaction. A CNF problem usually puts its conjecture in
+        negated_conjecture clauses, which are not axioms: to train on them too, pass
+        `statements=problem.statements`.
 
         By default each call builds a new graph, and a new Adam(0.01) if no optimizer is given. If
         you call this repeatedly, for example to log between calls, `reuse_graph=True` saves the
@@ -115,28 +145,32 @@ class Grounding:
         misses anything else and keeps using the old objects, with no error: the formulas, a new
         network or constant object for a symbol, the domain, a new connective or quantifier, and
         `p` inside a quantifier (about 0.8 in the kept graph and 0.5 in a new one, in one test).
-        To replace a kept graph after such a change, pass a different optimizer."""
-        kept_step, kept_optimizer = getattr(self, "_kept_step", (None, None))
+        To replace a kept graph after such a change, pass a different optimizer. A kept graph is
+        also tied to its statements: a call with different statements builds a new graph."""
+        kept_step, kept_optimizer, kept_statements = getattr(self, "_kept_step", (None, None, None))
         if reuse_graph:
             optimizer = optimizer or kept_optimizer
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
         params = self.trainable_variables
+        key = None if statements is None else tuple(statements)
 
         @tf.function
         def step():
             with tf.GradientTape() as tape:
-                sat = self.sat(tape=tape)
+                sat = self.sat(statements, tape=tape)
                 loss = 1. - sat
             grads = tape.gradient(loss, params)
-            optimizer.apply_gradients([(g, p) for g, p in zip(grads, params) if g is not None])
+            pairs = [(g, p) for g, p in zip(grads, params) if g is not None]
+            if pairs:  # without axioms, for example, there is nothing to train
+                optimizer.apply_gradients(pairs)
             return sat
 
-        if reuse_graph and optimizer is kept_optimizer:
+        if reuse_graph and optimizer is kept_optimizer and key == kept_statements:
             step = kept_step  # the new tf.function costs nothing: it has no graph until its first call
         for _ in range(steps):
             sat = step()
         if reuse_graph:  # only now, so that a call that fails keeps nothing
-            self._kept_step = step, optimizer
+            self._kept_step = step, optimizer, key
         return float(sat)
 
     def refute(self, formula, q: float = 0.95, steps: int = 2000, alpha: float = 0.05, beta: float = 10.,
@@ -158,19 +192,49 @@ class Grounding:
                 truth = self.evaluate(formula, tape=tape).tensor
                 loss = truth + tf.keras.activations.elu(beta * (q - sat_kb), alpha=alpha)
             grads = tape.gradient(loss, params)
-            optimizer.apply_gradients([(g, p) for g, p in zip(grads, params) if g is not None])
+            pairs = [(g, p) for g, p in zip(grads, params) if g is not None]
+            if pairs:
+                optimizer.apply_gradients(pairs)
             return sat_kb, truth
 
         for _ in range(steps):
             sat_kb, truth = step()
         return float(sat_kb), float(truth)
 
+    def _distinct_values(self) -> ltn.core.Formula | None:
+        """The implicit axiom that different values are unequal, as one formula: for every pair of
+        individuals with different values, they are not equal. None if there are fewer than two."""
+        names, seen = [], set()
+        for name, value in self.problem.values.items():
+            if value not in seen:  # one name for each value, the one that has the grounding
+                seen.add(value)
+                names.append(name)
+        if len(names) < 2:
+            return None
+        k = len(names)
+        values = tf.stack([self.constants[name].tensor for name in names])
+        equal = tf.reshape(self.predicates["="].model([tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]), [k, k])
+        unequal = tf.boolean_mask(1. - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
+        return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
+
     def _variable(self, label: str, individuals: list[ltn.core.Term], tape: tf.GradientTape | None) -> ltn.Variable:
+        if not individuals:
+            raise ValueError("Variables have nothing to range over, because the problem has no constants. "
+                             "Pass extra_individuals=1 or more to Grounding, or fill its domain.")
         if tape is not None:
             return ltn.Variable.from_constants(label, individuals, tape=tape)
         with warnings.catch_warnings():  # no gradients needed, e.g. when querying
             warnings.simplefilter("ignore")
             return ltn.Variable.from_constants(label, individuals)
+
+    @staticmethod
+    def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:
+        """Clear errors for a symbol that a query uses wrongly, instead of a KeyError or a Keras error."""
+        if name not in groundings:
+            raise ValueError(f"{name} is not a {kind} of the problem.")
+        if arities.get(name, arity) != arity:
+            expected = arities[name]
+            raise ValueError(f"The {kind} {name} takes {expected} argument{'s' * (expected != 1)}, not {arity}.")
 
     @staticmethod
     def _apply(symbol: ltn.Predicate | ltn.Function, args: list) -> ltn.core.Expression:
@@ -183,11 +247,21 @@ class Grounding:
             return env[f.name]
         if isinstance(f, Fn):
             if not f.args:
+                self._check(self.constants, {}, f.name, 0, "constant")
                 return self.constants[f.name]
+            self._check(self.functions, self.problem.functions, f.name, len(f.args), "function")
             return self._apply(self.functions[f.name], [recurse(a) for a in f.args])
         if isinstance(f, Atom):
             if not f.args:
+                self._check(self.propositions, {}, f.pred, 0, "proposition")
                 return self.propositions[f.pred]
+            if f.pred == "=":
+                values = [self.problem.values.get(a.name) if isinstance(a, Fn) and not a.args else None
+                          for a in f.args]
+                if None not in values:  # both are interpreted as themselves
+                    return ltn.Proposition(1. if values[0] == values[1] else 0., trainable=False)
+            else:
+                self._check(self.predicates, self.problem.predicates, f.pred, len(f.args), "predicate")
             return self._apply(self.predicates[f.pred], [recurse(a) for a in f.args])
         if isinstance(f, Truth):
             return ltn.Proposition(1. if f.value else 0., trainable=False)

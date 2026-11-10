@@ -281,6 +281,21 @@ def test_equality_has_no_parameters():
     assert len(grounding.trainable_variables) == 2
 
 
+def test_equal_values_share_one_grounding():
+    grounding = Grounding(tptp.parse('fof(test, axiom, p(1/2) & p(0.5) & p(2) & p("2")).'), embedding_size=SIZE)
+    assert grounding.constants["1/2"] is grounding.constants["0.5"]
+    assert grounding.domain == ["1/2", "2", '"2"']
+    parameters = grounding.trainable_variables
+    assert len({id(parameter) for parameter in parameters}) == len(parameters)
+
+
+def test_variables_need_individuals():
+    problem = tptp.parse("fof(test, axiom, ! [X] : p(X)).")
+    with pytest.raises(ValueError, match="extra_individuals"):
+        Grounding(problem).sat()
+    assert 0. < float(Grounding(problem, extra_individuals=1).sat()) < 1.
+
+
 # 4. Training
 
 def assert_same_parameters(grounding, expected_parameters, before):
@@ -346,6 +361,28 @@ def test_refutation_matches_the_hand_written_program():
 
     assert grounding.refute(QUERY, steps=STEPS) == pytest.approx((float(sat), float(truth)), abs=1e-4)
     assert_same_parameters(grounding, expected_parameters, before)
+
+
+def test_training_without_axioms_changes_nothing():
+    grounding = Grounding(tptp.parse("fof(test, conjecture, p(a))."), embedding_size=SIZE)
+    before = [parameter.numpy().copy() for parameter in grounding.trainable_variables]
+    assert grounding.train(2) == 1.
+    assert all((parameter.numpy() == start).all()
+               for parameter, start in zip(grounding.trainable_variables, before, strict=True))
+
+
+def test_training_on_chosen_statements_is_training_on_them_as_axioms():
+    # A CNF problem usually puts its conjecture in negated_conjecture clauses, which are not axioms.
+    chosen = tptp.parse("cnf(fact, negated_conjecture, p(a)).\ncnf(goal, axiom, ~ q(a)).")
+    as_axioms = tptp.parse("cnf(fact, axiom, p(a)).\ncnf(goal, negated_conjecture, ~ q(a)).")
+    tf.keras.utils.set_random_seed(0)
+    first = Grounding(chosen, embedding_size=SIZE)
+    tf.keras.utils.set_random_seed(0)
+    second = Grounding(as_axioms, embedding_size=SIZE)
+    assert same_parameters(first, second)
+    first.train(STEPS, statements=chosen.with_role("negated_conjecture"))
+    second.train(STEPS)
+    assert same_parameters(first, second)
 
 
 def test_propositions_stay_truth_values_during_training():
@@ -446,7 +483,7 @@ def test_different_optimizer_rebuilds_the_graph_and_is_kept():
 def test_failed_call_keeps_no_graph():
     grounding = Grounding(tptp.parse(SMALL_PROBLEM), embedding_size=SIZE)
     predicate = grounding.predicates.pop("p")
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError):
         grounding.train(1, reuse_graph=True)
     grounding.predicates["p"] = predicate  # a kept step would still train the parameters without it
     before = [weight.numpy().copy() for weight in predicate.model.trainable_variables]
@@ -476,3 +513,16 @@ def test_kept_graph_does_not_see_a_new_predicate():
     grounding.predicates["p"] = ltn.Predicate.Lambda(lambda x: tf.ones_like(x[:, 0]))
     assert float(grounding.sat()) == pytest.approx(1., abs=1e-3)
     assert grounding.train(1, reuse_graph=True) == pytest.approx(old_sat, abs=1e-6)
+
+
+def test_kept_graph_is_rebuilt_for_other_statements():
+    problem = tptp.parse("fof(fact, axiom, p(a)).\nfof(goal, negated_conjecture, ~ p(a)).")
+    grounding = Grounding(problem, embedding_size=SIZE)
+    traces = count_traces(grounding)
+    grounding.train(1, reuse_graph=True)
+    built = len(traces)
+    grounding.train(1, reuse_graph=True, statements=problem.statements)
+    rebuilt = len(traces)
+    assert rebuilt > built
+    grounding.train(1, reuse_graph=True, statements=problem.statements)
+    assert len(traces) == rebuilt

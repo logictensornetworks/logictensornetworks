@@ -81,11 +81,16 @@ def free_vars(f, bound=frozenset()) -> list[str]:
 
 @dataclasses.dataclass
 class Problem:
-    """The statements of a problem, its symbols with their arities, and how to read a query."""
+    """The statements of a problem, its symbols with their arities, and how to read a query.
+
+    `values` holds the constants that a syntax interprets as themselves, such as TPTP's numbers and
+    distinct objects. Two of them are the same individual if their values are equal, and different
+    individuals otherwise. The syntax fills it in."""
     statements: list[Statement]
     parse_formula: Callable[[str], object]
     predicates: dict[str, int] = dataclasses.field(default_factory=dict)
     functions: dict[str, int] = dataclasses.field(default_factory=dict)
+    values: dict[str, object] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for statement in self.statements:

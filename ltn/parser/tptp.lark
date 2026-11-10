@@ -13,15 +13,20 @@
 //   sources that the expanded rule rejects, such as theory(equality).
 // - The other languages are valid TPTP that the reader refuses, so it stops as soon as it sees one
 //   of them. The rules named unsupported_... are where that happens.
+// - An include is read here, and tptp.py reads the file it names.
 
 // ------------------------------------------------------------------------------------- Files
 
 tptp_file: _tptp_input*
-_tptp_input: fof_annotated | cnf_annotated | unsupported_language "("
+_tptp_input: fof_annotated | cnf_annotated | include | unsupported_language "("
 
 fof_annotated: "fof" "(" name "," formula_role "," fof_formula annotations? ")" "."
 cnf_annotated: "cnf" "(" name "," formula_role "," cnf_formula annotations? ")" "."
-!unsupported_language: "include" | "tff" | "thf" | "tcf" | "tpi"
+!unsupported_language: "tff" | "thf" | "tcf" | "tpi"
+
+// <file_name> is an <atomic_word>. The last <name> is a <space_name>, which tptp.py refuses.
+include: INCLUDE "(" plain_word ("," formula_selection ("," name)?)? ")" "."
+formula_selection: "[" name ("," name)* "]" | "*"
 
 formula_role: LOWER_WORD ("-" general_term)?
 annotations: "," general_term ("," general_list)?
@@ -96,6 +101,7 @@ plain_word: LOWER_WORD | SINGLE_QUOTED
 
 // ------------------------------------------------------------------------------------ Tokens
 
+INCLUDE: "include"
 NONASSOC_CONNECTIVE: "<=>" | "=>" | "<=" | "<~>" | "~|" | "~&"
 FOF_QUANTIFIER: "!" | "?"
 

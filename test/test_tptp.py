@@ -13,9 +13,11 @@ a line mean the same thing, then a passing test shows that the reader gives the 
 meaning.
 
 What counts as valid TPTP comes from the official grammar, SyntaxBNF v9.3.1.6, in
-https://github.com/TPTPWorld/SyntaxBNF. The tests only call `tptp.parse`, `tptp.parse_formula` and
-`Grounding`, so they keep working if the parser is replaced. test_tptp_graph.py uses the same tables to
-test the LTN graph that the reader builds.
+https://github.com/TPTPWorld/SyntaxBNF. The tests only call `tptp.parse`, `tptp.parse_formula`,
+`tptp.parse_file` and `Grounding`, so they keep working if the parser is replaced. test_tptp_graph.py
+uses the same tables to test the LTN graph that the reader builds.
+
+Section 3 tests `tptp.parse_file`, which reads a file together with the files it includes.
 """
 import functools
 import subprocess
@@ -208,6 +210,17 @@ FORMULAS = [
     ("p(123)",                                     lambda: P(number)),
     ("p('123')",                                   lambda: P(quoted_number)),
     ('p("a")',                                     lambda: P(distinct)),
+
+    # Numbers and distinct objects are interpreted as themselves, so an equation between two of
+    # them is true or false according to their values. Other constants have no value.
+    ('"a" = "a"',                                  lambda: TRUE),
+    ('"a" != "b"',                                 lambda: Not(FALSE)),
+    ("123 = 123.0",                                lambda: TRUE),
+    ("1/2 = 0.5",                                  lambda: TRUE),
+    ("1 = 2",                                      lambda: FALSE),
+    ('123 = "a"',                                  lambda: FALSE),
+    ("123 = '123'",                                lambda: Eq([number, quoted_number])),
+    ('"a" = a',                                    lambda: Eq([distinct, a])),
 
     # Larger formulas
     ("! [X] : ? [Y] : ( r(X, Y) & ~ r(Y, X) )",
@@ -438,7 +451,6 @@ NOT_TPTP = [
     ("fof(X, axiom, p(a)).",                       "a name cannot be a variable"),
     ("fof(1.5, axiom, p(a)).",                     "a name cannot be a real number"),
     ("fof(x, banana, p(a)).",                      "not a role"),
-    ("fof(x, unknown, p(a)).",                     "the grammar calls this role an error"),
     ("fof(x, axiom, p(a)) fof(y, axiom, q(a)).",   "no dot between statements"),
     ("fof(x, axiom, p(a)). garbage",               "text after the last statement"),
     ("fof",                                        "file cut off after the language"),
@@ -535,6 +547,9 @@ NOT_TPTP = [
 
     # Wrong, not just unsupported
     ("include",                                    "include without parentheses"),
+    ("include('a.ax')",                            "include without a full stop"),
+    ("include('a.ax', []).",                       "include of an empty selection"),
+    ('include("a.ax").',                           "a file name is an <atomic_word>, not a distinct object"),
     ("tff",                                        "tff without parentheses"),
     ("fof(x, axiom, p(-)).",                       "a minus sign without a number"),
     ("fof(x, axiom, p(`)).",                       "a back quote without a word"),
@@ -551,6 +566,9 @@ NOT_TPTP = [
 NOT_SUPPORTED = [
     ("include('Axioms/SET001-0.ax').",             "include"),
     ("include('Axioms/SET001-0.ax', [a, b]).",     "include of selected formulas"),
+    ("include('Axioms/SET001-0.ax', *).",          "include of every formula, with *"),
+    ("include('Axioms/SET001-0.ax', [a], space).", "include with a space name"),
+    ("fof(x, unknown, p(a)).",                     "role unknown, which the grammar calls an error"),
     ("tff(x, axiom, p(a)).",                       "language tff"),
     ("tff(x, type, p: $int > $o).",                "language tff, with characters fof doesn't have"),
     ("thf(x, axiom, p).",                          "language thf"),
@@ -656,6 +674,21 @@ def test_syntax_long_chains_parse():
     tptp.parse("cnf(test, axiom, " + " | ".join(["p(X)"] * 10000) + ").")
 
 
+@pytest.mark.parametrize("program", [
+    "fof(test, axiom, p(" + "f(" * 5000 + "a" + ")" * 5000 + ")).",
+    "fof(test, axiom, " + "~ " * 5000 + "p(a)).",
+    "fof(test, axiom, " + "( p(a) & " * 5000 + "p(b)" + " )" * 5000 + ").",
+], ids=["function terms", "negations", "conjunctions"])
+def test_syntax_deep_nesting_is_refused(program):
+    with pytest.raises(NotImplementedError, match="nested too deeply"):
+        tptp.parse(program)
+
+
+def test_syntax_include_needs_parse_file():
+    with pytest.raises(NotImplementedError, match="parse_file"):
+        tptp.parse("include('Axioms/SET001-0.ax').")
+
+
 # 2. Values
 
 @pytest.mark.parametrize("name", PROGRAMS)
@@ -673,6 +706,33 @@ def test_value_of_the_knowledge_base():
 def test_value_of_a_query():
     grounding = read("fof(test, axiom, p(a) & r(a, b)).")
     assert [float(grounding.evaluate("p(b) | r(b, a)").tensor)] == values_of(Or(P(b), R([b, a])))
+
+
+@pytest.mark.parametrize("query, message", [
+    ("z(a)", "z is not a predicate"),
+    ("p(zz)", "zz is not a constant"),
+    ("zz", "zz is not a proposition"),
+    ("p(h(a))", "h is not a function"),
+    ("p(a, a)", "takes 1 argument, not 2"),
+    ("p(f(a, a))", "takes 1 argument, not 2"),
+])
+def test_query_with_a_symbol_the_problem_lacks_is_rejected(query, message):
+    grounding = read("fof(test, axiom, p(f(a))).")
+    with pytest.raises(ValueError, match=message):
+        grounding.evaluate(query)
+
+
+def test_value_without_axioms_is_one():
+    # A conjecture is not an axiom, and no axioms are all satisfied.
+    assert [float(read("fof(test, conjecture, p(a)).").sat())] == values_of(TRUE)
+
+
+def test_value_includes_the_implicit_axiom_that_values_differ():
+    # TPTP interprets "a" and 123 as themselves, so "a" != 123 is an implicit axiom. It is one
+    # formula for each ordered pair of different values, aggregated like a universal quantifier.
+    implicit = SatAgg([Not(Eq([distinct, number])), Not(Eq([number, distinct]))])
+    program = 'fof(test, axiom, p("a") & p(123)).'
+    assert [float(read(program).sat())] == values_of(SatAgg([And(P(distinct), P(number)), implicit]))
 
 
 def test_value_of_a_long_chain():
@@ -700,6 +760,87 @@ def test_value_with_function_terms_of_depth_2():
 def test_value_with_a_binary_function_term():
     u = ranging_over(a, b, c, *[G([v, w]) for v in (a, b, c) for w in (a, b, c)])
     assert values_read_from("fof(test, axiom, ! [X] : q(g(X, a))).", herbrand_depth=1) == values_of(Forall(u, Q(G([u, a]))))
+
+
+# 3. Files. tptp.parse_file reads a file and puts the statements of each included file in place of
+# its include, as if they were pasted there.
+
+def write(folder, name: str, text: str):
+    path = folder / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
+@pytest.fixture
+def library(tmp_path, monkeypatch):
+    """Laid out like TPTP: an axiom file includes another one by its name from the root."""
+    monkeypatch.delenv("TPTP", raising=False)
+    write(tmp_path, "Axioms/B.ax", "fof(b1, axiom, s).\n")
+    write(tmp_path, "Axioms/A.ax", "include('Axioms/B.ax').\nfof(a1, axiom, p(a)).\nfof(a2, axiom, q(a)).\n")
+    return tmp_path
+
+
+def test_file_gets_the_included_statements_in_place(library):
+    path = write(library, "Problems/P.p", "fof(p1, axiom, t).\ninclude('Axioms/A.ax').\nfof(goal, conjecture, p(1)).\n")
+    pasted = "fof(p1, axiom, t). fof(b1, axiom, s). fof(a1, axiom, p(a)). fof(a2, axiom, q(a)). fof(goal, conjecture, p(1))."
+    assert tptp.parse_file(path, root=library) == tptp.parse(pasted)
+
+
+@pytest.mark.parametrize("selection, pasted", [
+    ("[a2]", "fof(a2, axiom, q(a))."),
+    ("['a2', a1]", "fof(a1, axiom, p(a)). fof(a2, axiom, q(a))."),  # in the order of the file
+    ("*", "fof(b1, axiom, s). fof(a1, axiom, p(a)). fof(a2, axiom, q(a))."),
+])
+def test_include_selects_statements_by_name(library, selection, pasted):
+    path = write(library, "Problems/P.p", f"include('Axioms/A.ax', {selection}).\n")
+    assert tptp.parse_file(path, root=library) == tptp.parse(pasted)
+
+
+def test_include_is_looked_up_next_to_the_file_first(library):
+    write(library, "Problems/Axioms/B.ax", "fof(near, axiom, t).\n")
+    path = write(library, "Problems/P.p", "include('Axioms/B.ax').\n")
+    assert [statement.name for statement in tptp.parse_file(path, root=library).statements] == ["near"]
+
+
+def test_root_defaults_to_the_environment_variable_TPTP(library, monkeypatch):
+    path = write(library, "Problems/P.p", "include('Axioms/B.ax').\n")
+    monkeypatch.setenv("TPTP", str(library))
+    assert [statement.name for statement in tptp.parse_file(path).statements] == ["b1"]
+
+
+def test_include_of_a_file_name_with_an_escaped_quote(library):
+    write(library, "it's.ax", "fof(quoted, axiom, s).\n")
+    path = write(library, "P.p", r"include('it\'s.ax').")
+    assert [statement.name for statement in tptp.parse_file(path).statements] == ["quoted"]
+
+
+def test_missing_included_file_says_where_to_look(library):
+    path = write(library, "Problems/P.p", "include('Axioms/C.ax').\n")
+    with pytest.raises(FileNotFoundError, match="TPTP"):
+        tptp.parse_file(path, root=library)
+
+
+def test_file_that_includes_itself_is_rejected(library):
+    write(library, "Axioms/B.ax", "include('Axioms/A.ax').\n")
+    path = write(library, "Problems/P.p", "include('Axioms/A.ax').\n")
+    with pytest.raises(SyntaxError, match="includes itself"):
+        tptp.parse_file(path, root=library)
+
+
+def test_selected_name_must_be_in_the_file(library):
+    path = write(library, "Problems/P.p", "include('Axioms/A.ax', [a3]).\n")
+    with pytest.raises(SyntaxError, match="a3"):
+        tptp.parse_file(path, root=library)
+
+
+@pytest.mark.parametrize("text, error", [("fof(b1, axiom, p(a) &).", SyntaxError),
+                                         ("tff(b1, axiom, p).", NotImplementedError)])
+def test_error_in_an_included_file_names_the_file(library, text, error):
+    write(library, "Axioms/B.ax", text)
+    path = write(library, "Problems/P.p", "include('Axioms/A.ax').\n")
+    with pytest.raises(error, match="B.ax"):
+        tptp.parse_file(path, root=library)
 
 
 # The parser is optional.
