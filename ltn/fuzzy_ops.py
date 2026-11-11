@@ -6,8 +6,8 @@ import tensorflow as tf
 Element-wise fuzzy logic operators for tensorflow.
 Supports traditional NumPy/Tensorflow broadcasting.
 
-To use in LTN formulas (broadcasting w.r.t. ltn variables appearing in a formula), 
-wrap the operator with `ltn.WrapperConnective` or `ltn.WrapperQuantifier`. 
+To use in LTN formulas (broadcasting w.r.t. ltn variables appearing in a formula),
+wrap the operator with `ltn.WrapperConnective` or `ltn.WrapperQuantifier`.
 """
 
 eps = 1e-4
@@ -167,9 +167,10 @@ class Aggreg_LogProd:
     def __init__(self, stable=True):
         warn(
             "`Aggreg_LogProd` outputs values out of the truth value range [0,1]. "
-            "Its usage with other connectives could be compromised."
+            "Its usage with other connectives could be compromised. "
             "Use it carefully.",
             UserWarning,
+            stacklevel=2,
         )
         self.stable = stable
 

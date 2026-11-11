@@ -77,14 +77,17 @@ class TestFromLogits(unittest.TestCase):
                 )
 
     def test_in_tf_function(self):
-        """Keras 3 rejected the default model names (leading underscore) as name scopes in a tf.function."""
+        """Keras 3 rejected the default model names as name scopes in a tf.function.
+
+        They start with an underscore.
+        """
         for activation in ["sigmoid", "softmax"]:
             with self.subTest(activation=activation):
                 P = core.Predicate.FromLogits(self.logits_model, activation_function=activation)
 
                 @tf.function
                 def truth_values():
-                    return P([self.x, self.l]).tensor
+                    return P([self.x, self.l]).tensor  # noqa: B023 (called right away)
 
                 self.assertTrue(array_allclose(truth_values(), P([self.x, self.l]).tensor))
 

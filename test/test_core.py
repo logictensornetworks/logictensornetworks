@@ -81,7 +81,8 @@ class TestConstant(unittest.TestCase):
                 c = core.Constant(self.c_val_4, trainable=trainable)
                 self.assertEqual(c.tensor.shape, [1])
                 self.assertTrue(array_allclose(c.tensor.numpy(), np.array([self.c_val_4])))
-        # indexing a variable returns a tensor: a trainable scalar must still be a variable after the expansion
+        # indexing a variable returns a tensor: a trainable scalar must still be a variable after
+        # the expansion
         c = core.Constant(self.c_val_4, trainable=True)
         self.assertTrue(isinstance(c.tensor, tf.Variable))
         with tf.GradientTape() as tape:
@@ -447,7 +448,7 @@ class TestBroadcast(unittest.TestCase):
     def test_broadcast_variables_intact(self):
         """Keeps the correct values"""
         exprs = core.broadcast_exprs(list(self.xs.values()), in_place=False)
-        for expr, x in zip(exprs, list(self.xs.values())):
+        for expr, x in zip(exprs, list(self.xs.values()), strict=True):
             other_free_vars = [x_.label for x_ in list(self.xs.values()) if x_.label != x.label]
             for free_var in other_free_vars:
                 expr = expr.take(free_var, 0)
@@ -484,11 +485,11 @@ class TestBroadcast(unittest.TestCase):
     def test_in_place(self):
         xs = list(self.xs.values())
         copies = core.broadcast_exprs(xs, in_place=False)
-        for x, copy in zip(xs, copies):
+        for x, copy in zip(xs, copies, strict=True):
             self.assertIsNot(copy, x)
             self.assertEqual(x.free_vars, [x.label])
         exprs = core.broadcast_exprs(xs, in_place=True)
-        for x, expr, copy in zip(xs, exprs, copies):
+        for x, expr, copy in zip(xs, exprs, copies, strict=True):
             self.assertIs(expr, x)
             self.assertEqual(x.free_vars, copy.free_vars)
             self.assertTrue(array_allclose(x.tensor, copy.tensor))
@@ -799,7 +800,6 @@ class TestGuardedQuantifier(unittest.TestCase):
 
     def test_aggreg_first_var_of_mask(self):
         x = core.Variable("x", np.random.rand(3, 1))
-        y = core.Variable("y", np.random.rand(4, 1))
         mask = core.Formula(
             tf.constant([[1.0, 1.0, 0.0, 0.0], [0.0, 1.0, 1.0, 0.0], [0.0, 0.0, 1.0, 0.0]]),
             free_vars=["x", "y"],
@@ -819,7 +819,7 @@ class TestGuardedQuantifier(unittest.TestCase):
         self.assertTrue(array_allclose(actual.tensor, expected))
 
     def test_wff_vars_not_in_mask(self):
-        """The empty semantics broadcast over the free variables of the wff that are not in the mask."""
+        """The empty semantics broadcast over the wff's free variables that are not in the mask."""
         x = core.Variable("x", [[0.0], [1.0], [2.0]])
         y = core.Variable("y", [[0.0], [10.0], [20.0]])
         p = core.Predicate.Lambda(lambda inputs: tf.squeeze(inputs[2], axis=1))  # p(x,y,z) = z
@@ -847,7 +847,8 @@ class TestGuardedQuantifier(unittest.TestCase):
         Forall = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Min(), semantics="forall")
         Exists = core.Wrapper_Quantifier(fuzzy_ops.Aggreg_Max(), semantics="exists")
         wffs_and_masks = [
-            # the rows of the mask have different lengths; the first mask gave wrong values, the second an error
+            # the rows of the mask have different lengths; the first mask gave wrong values, the
+            # second an error
             (
                 np.random.rand(2, 3, 2),
                 ["x", "y", "z"],
@@ -875,7 +876,10 @@ class TestGuardedQuantifier(unittest.TestCase):
                     self.assertTrue(array_allclose(actual.tensor, expected))
 
     def test_mask_on_more_free_vars(self):
-        """Quantifying one var of a mask on three vars keeps the other two (the aggregation result is ragged)."""
+        """Quantifying one var of a mask on three vars keeps the other two.
+
+        The aggregation result is ragged.
+        """
         w = core.Variable("w", np.random.rand(4, 1))
         wff_values = np.random.rand(2, 3, 4)
         mask_values = np.random.rand(2, 3, 4) > 0.5
@@ -983,7 +987,7 @@ class TestOptimizers(unittest.TestCase):
                     x = core.Variable.from_constants("x", [c1, c2], tape=tape)
                     loss = 2.0 - Forall(x, P(x)).tensor - P(c3).tensor
                 optimizer.apply_gradients(
-                    zip(tape.gradient(loss, trainable_variables), trainable_variables)
+                    zip(tape.gradient(loss, trainable_variables), trainable_variables, strict=True)
                 )
                 # P increases with the features of its argument
                 for c in [c1, c2, c3]:
@@ -1003,9 +1007,10 @@ class TestOptimizers(unittest.TestCase):
                 with tf.GradientTape() as tape:
                     loss = 1.0 - And(a, Not(b)).tensor
                 optimizer.apply_gradients(
-                    zip(tape.gradient(loss, trainable_variables), trainable_variables)
+                    zip(tape.gradient(loss, trainable_variables), trainable_variables, strict=True)
                 )
-                # the large step pushes the truth values out of [0,1], and the constraint clips them back
+                # the large step pushes the truth values out of [0,1], and the constraint clips them
+                # back
                 self.assertEqual(float(a.tensor), 1.0)
                 self.assertEqual(float(b.tensor), 0.0)
 
@@ -1054,7 +1059,7 @@ class TestDigitAdditionAxiom(unittest.TestCase):
         probs_x = tf.nn.softmax(self.logits_model([self.images_x])).numpy()
         probs_y = tf.nn.softmax(self.logits_model([self.images_y])).numpy()
         sat_per_pair = []
-        for p_x, p_y, label in zip(probs_x, probs_y, self.labels):
+        for p_x, p_y, label in zip(probs_x, probs_y, self.labels, strict=True):
             products = [
                 p_x[d1] * p_y[d2]
                 for d1 in range(self.n_digits)

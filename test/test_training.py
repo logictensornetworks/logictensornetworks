@@ -41,7 +41,7 @@ class TestBinaryClassification(unittest.TestCase):
         with tf.GradientTape() as tape:
             loss = 1.0 - self.axioms()
         grads = tape.gradient(loss, self.A.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.A.trainable_variables))
+        self.optimizer.apply_gradients(zip(grads, self.A.trainable_variables, strict=True))
 
     def accuracy(self):
         predictions = self.A(self.x_all).tensor.numpy() > 0.5
@@ -108,7 +108,7 @@ class TestRelationalLearning(unittest.TestCase):
             with tf.GradientTape() as tape:
                 loss = 1.0 - self.axioms()
             grads = tape.gradient(loss, self.trainable_variables)
-            self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+            self.optimizer.apply_gradients(zip(grads, self.trainable_variables, strict=True))
 
         for _ in range(300):
             step()
@@ -167,7 +167,7 @@ class TestEmbeddingLearning(unittest.TestCase):
             sat_after = float(step())
         self.assertGreater(sat_after, sat_before + 0.2)
         self.assertGreater(sat_after, 0.7)
-        for variable, value_before in zip(self.trainable_variables, values_before):
+        for variable, value_before in zip(self.trainable_variables, values_before, strict=True):
             self.assertFalse(np.allclose(variable.numpy(), value_before))
         g = self.individuals
         for i, j in self.parents:
@@ -180,7 +180,7 @@ class TestEmbeddingLearning(unittest.TestCase):
 
         def step():
             sat, grads = gradients()
-            self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+            self.optimizer.apply_gradients(zip(grads, self.trainable_variables, strict=True))
             return sat
 
         self.train_and_check(step)
@@ -189,7 +189,7 @@ class TestEmbeddingLearning(unittest.TestCase):
         @tf.function
         def step():
             sat, grads = self.gradients()
-            self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+            self.optimizer.apply_gradients(zip(grads, self.trainable_variables, strict=True))
             return sat
 
         self.train_and_check(step)

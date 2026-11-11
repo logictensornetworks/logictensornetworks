@@ -6,9 +6,10 @@ import ltn
 
 
 def Pred_equal_strict():
-    """Returns a 2-ary LTN predicate. The predicate returns 1.0 if the inputs are equal, 0.0 otherwise."""
+    """Returns a 2-ary LTN predicate that returns 1.0 if the inputs are equal, 0.0 otherwise."""
     # The equality is measured on the list of tensors unpacked on dimension 0.
-    # The model will return n truth values, where n is the number of values on dimension 0 (the batch dimension).
+    # The model will return n truth values, where n is the number of values on dimension 0
+    # (the batch dimension).
     return ltn.Predicate.Lambda(
         lambda args: tf.cast(
             tf.reduce_all(tf.math.equal(args[0], args[1]), axis=tf.range(1, tf.rank(args[0]))),
@@ -21,7 +22,8 @@ def _euclidean_distance(u, v):
     """Euclidean distance along axis 1, with a zero (instead of NaN) gradient when u == v."""
     squared = tf.reduce_sum(tf.square(u - v), axis=1)
     non_zero = squared > 0.0
-    # the sqrt gradient is infinite at 0; feed it a dummy value there so that tf.where does not propagate NaNs
+    # the sqrt gradient is infinite at 0; feed it a dummy value there so that tf.where does not
+    # propagate NaNs
     return tf.where(non_zero, tf.sqrt(tf.where(non_zero, squared, 1.0)), 0.0)
 
 
@@ -46,7 +48,7 @@ def Pred_equal_smooth_inv(alpha=1):
 
 
 def Func_add():
-    """Returns a 2-ary LTN function. The function returns the element-wise addition of the inputs."""
+    """Returns a 2-ary LTN function that returns the element-wise addition of the inputs."""
     return ltn.Function.Lambda(lambda args: args[0] + args[1])
 
 
@@ -62,8 +64,9 @@ class LogitsToPredicateModel(tf.keras.Model):
     def __init__(self, logits_model, single_label=True):
         """
         logits_model: a tf Model that outputs logits
-        single_label: True for exclusive classes (logits are translated into probabilities using softmax),
-                False for non-exclusive classes (logits are translated into probabilities using sigmoid)
+        single_label: True for exclusive classes (logits are translated into probabilities
+                using softmax), False for non-exclusive classes (logits are translated into
+                probabilities using sigmoid)
         """
         warn(
             "`LogitsToPredicateModel` is deprecated. Use `ltn.Predicate.FromLogits` instead.",

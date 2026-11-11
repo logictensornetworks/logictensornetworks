@@ -28,7 +28,7 @@ class Expression:
 
     def _get_axis_of_free_var(self, free_var: VarLabel) -> int:
         if free_var not in self.free_vars:
-            raise ValueError("%s is not a free variable occurring in the expression." % free_var)
+            raise ValueError(f"{free_var} is not a free variable occurring in the expression.")
         return self.free_vars.index(free_var)
 
     def _get_dim_of_free_var(self, free_var: VarLabel) -> tf.Tensor:
@@ -70,7 +70,7 @@ class Variable(Term):
     def __init__(self, label: VarLabel, values: FloatTensorLike) -> None:
         for reserved in ["diag", "_flat"]:
             if label.startswith(reserved):
-                raise ValueError("Labels starting with %s are reserved." % reserved)
+                raise ValueError(f"Labels starting with {reserved} are reserved.")
         try:
             tensor = tf.constant(values, dtype=tf.float32)
         except TypeError:
@@ -87,7 +87,10 @@ class Variable(Term):
         self.locked_diag_label: str = None
 
     def __repr__(self) -> str:
-        return f"ltn.{self.__class__.__name__}(label={self.label}, tensor={self.tensor}, free_vars={self.free_vars})"
+        return (
+            f"ltn.{self.__class__.__name__}(label={self.label}, tensor={self.tensor}, "
+            f"free_vars={self.free_vars})"
+        )
 
     @classmethod
     def from_constants(
@@ -98,10 +101,11 @@ class Variable(Term):
     ) -> Variable:
         if not tape:
             warnings.warn(
-                "No instance of %s passed in argument when creating a LTN variable from constants. "
-                "LTN cannot verify that a tape is recording. If you created the variable within the scope of a tape, "
-                "or that you don't need to track weights (e.g. non-trainable constants), you can ignore this warning."
-                % tf.GradientTape
+                f"No instance of {tf.GradientTape} passed in argument when creating a LTN variable "
+                "from constants. LTN cannot verify that a tape is recording. If you created the "
+                "variable within the scope of a tape, or that you don't need to track weights "
+                "(e.g. non-trainable constants), you can ignore this warning.",
+                stacklevel=2,
             )
         else:
             if not tape._recording:
@@ -122,13 +126,17 @@ class Constant(Term):
         if len(tensor.shape) == 0:  # ensure feature dims
             tensor = tensor[tf.newaxis]
         if self._trainable:
-            # create the variable last: indexing a variable returns a tensor, which cannot be trained
+            # create the variable last: indexing a variable returns a tensor, which cannot be
+            # trained
             tensor = tf.Variable(tensor, trainable=True)
         free_vars = []
         super().__init__(tensor, free_vars=free_vars)
 
     def __repr__(self) -> str:
-        return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, free_vars={self.free_vars})"
+        return (
+            f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, "
+            f"free_vars={self.free_vars})"
+        )
 
 
 class Proposition(Formula):
@@ -153,7 +161,10 @@ class Proposition(Formula):
         super().__init__(tensor, free_vars=free_vars)
 
     def __repr__(self) -> str:
-        return f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, free_vars={self.free_vars})"
+        return (
+            f"ltn.{self.__class__.__name__}(tensor={self.tensor}, trainable={self._trainable}, "
+            f"free_vars={self.free_vars})"
+        )
 
 
 def _flatten_free_dims(exprs: list[Expression], in_place: bool = False) -> list[Expression]:
@@ -201,8 +212,9 @@ class _Model:
         if not self.model.trainable_variables:
             warnings.warn(
                 "The 'trainable_variables' attribute returned an empty list. Make sure that "
-                "the weights of the layers in the %s instance have been initialized, "
-                "for example by calling the model a first time." % tf.keras.Model
+                f"the weights of the layers in the {tf.keras.Model} instance have been "
+                "initialized, for example by calling the model a first time.",
+                stacklevel=2,
             )
         return self.model.trainable_variables
 
@@ -215,15 +227,15 @@ class Predicate(_Model):
         if not isinstance(inputs, (list, tuple)):
             if not isinstance(inputs, Term):
                 raise TypeError(
-                    "The input to a LTN Predicate should be instances of %s. "
-                    "Got an instance of %s instead." % (Term, type(inputs))
+                    f"The input to a LTN Predicate should be instances of {Term}. "
+                    f"Got an instance of {type(inputs)} instead."
                 )
         else:
             for x in inputs:
                 if not isinstance(x, Term):
                     raise TypeError(
-                        "The input to a LTN Predicate should be instances of %s. "
-                        "Got an instance of %s instead." % (Term, type(x))
+                        f"The input to a LTN Predicate should be instances of {Term}. "
+                        f"Got an instance of {type(x)} instead."
                     )
         expr = super().__call__(inputs, *args, **kwargs)
         wff = Formula(expr.tensor, expr.free_vars)
@@ -309,15 +321,15 @@ class Function(_Model):
         if not isinstance(inputs, (list, tuple)):
             if not isinstance(inputs, Term):
                 raise TypeError(
-                    "The input to a LTN Function should be instances of %s. "
-                    "Got an instance of %s instead." % (Term, type(inputs))
+                    f"The input to a LTN Function should be instances of {Term}. "
+                    f"Got an instance of {type(inputs)} instead."
                 )
         else:
             for x in inputs:
                 if not isinstance(x, Term):
                     raise TypeError(
-                        "The input to a LTN Function should be instances of %s. "
-                        "Got an instance of %s instead." % (Term, type(x))
+                        f"The input to a LTN Function should be instances of {Term}. "
+                        f"Got an instance of {type(x)} instead."
                     )
         expr = super().__call__(inputs, *args, **kwargs)
         term = Term(expr.tensor, expr.free_vars)
@@ -397,7 +409,6 @@ def broadcast_exprs(exprs: list[Expression], in_place: bool = False) -> list[Exp
         for free_var in expr.free_vars:
             free_var_to_dim[free_var] = expr._get_dim_of_free_var(free_var)
     free_vars = list(free_var_to_dim.keys())
-    free_dims = list(free_var_to_dim.values())
     # broadcast
     if not in_place:
         exprs = [expr._copy() for expr in exprs]
@@ -425,21 +436,19 @@ class Wrapper_Connective:
         for x in wffs:
             if not isinstance(x, Formula):
                 raise TypeError(
-                    "The operands of a LTN connective should be instances of %s. \
-                        Got an instance of %s instead."
-                    % (Formula, type(x))
+                    f"The operands of a LTN connective should be instances of {Formula}. "
+                    f"Got an instance of {type(x)} instead."
                 )
         wffs = broadcast_exprs(wffs)
         try:
             t_result = self.connective_op(*as_tensors(wffs), **kwargs)
-        except tf.errors.InvalidArgumentError:
+        except tf.errors.InvalidArgumentError as err:
+            shapes = ", ".join(str(wff.tensor.shape) for wff in wffs)
+            free_vars = ", ".join(str(wff.free_vars) for wff in wffs)
             raise ValueError(
-                "Could not connect formulas with shapes [%s] and free variables [%s]."
-                % (
-                    ", ".join(map(str, [wff.tensor.shape for wff in wffs])),
-                    ", ".join(map(str, [wff.free_vars for wff in wffs])),
-                )
-            )
+                f"Could not connect formulas with shapes [{shapes}] "
+                f"and free variables [{free_vars}]."
+            ) from err
         result = Formula(t_result, wffs[0].free_vars)
         return result
 
@@ -462,20 +471,20 @@ class Wrapper_Quantifier:
         for x in variables:
             if not isinstance(x, Variable):
                 raise TypeError(
-                    "The quantified variables should be instances of %s. "
-                    "Got an instance of %s instead." % (Variable, type(x))
+                    f"The quantified variables should be instances of {Variable}. "
+                    f"Got an instance of {type(x)} instead."
                 )
         if not isinstance(wff, Formula):
             raise TypeError(
-                "The quantified expression should be an instance of %s. "
-                "Got an instance of %s instead." % (Formula, type(wff))
+                f"The quantified expression should be an instance of {Formula}. "
+                f"Got an instance of {type(wff)} instead."
             )
         aggreg_vars = set([var.free_vars[0] for var in variables])
         if mask is not None:
             if not isinstance(mask, Formula):
                 raise TypeError(
-                    "The mask argument should be an instance of %s. "
-                    "Got an instance of %s instead." % (Formula, type(mask))
+                    f"The mask argument should be an instance of {Formula}. "
+                    f"Got an instance of {type(mask)} instead."
                 )
             mask = transpose_free_vars(
                 mask,
@@ -496,8 +505,9 @@ class Wrapper_Quantifier:
                 if isinstance(t_result, tf.RaggedTensor):
                     t_result = t_result.to_tensor()
             else:
-                # The mask only guards free vars of the result, so the quantified vars keep their whole domain.
-                # (`boolean_mask` would compact the last axis of the mask, which is then a free var of the result.)
+                # The mask only guards free vars of the result, so the quantified vars keep their
+                # whole domain. (`boolean_mask` would compact the last axis of the mask, which is
+                # then a free var of the result.)
                 t_result = self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs)
 
             non_empty_vars = (
