@@ -4,16 +4,16 @@ Guidance for AI coding agents (and humans) working on LTN (Logic Tensor Networks
 
 ## Setup and commands
 
-The project is a plain setuptools package (`pyproject.toml`, dependencies in `requirements.txt`
-and `requirements-examples.txt`) built on TensorFlow.
+The project uses [uv](https://docs.astral.sh/uv/). Dependencies are declared in
+`pyproject.toml` (core, the `examples` extra, and the `dev` group) and locked in `uv.lock`.
 
 ```bash
-pip install -e .                 # install the package and core dependencies
-pip install -e ".[examples]"     # also install the dependencies used in examples/
-pip install pytest
-python -m pytest test                          # run the test suite
-python -m pytest test/test_core.py -k name     # run a subset
+uv sync                                    # install dependencies (add --extra examples for examples/)
+uv run pytest test                         # run the test suite
+uv run pytest test/test_core.py -k name    # run a subset
 ```
+
+After changing dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`.
 
 CI (`.github/workflows/tests.yml`) runs the tests on Python 3.10 to 3.13 with the latest
 TensorFlow, and with TensorFlow 2.15 (the last release with Keras 2), on Linux and macOS.

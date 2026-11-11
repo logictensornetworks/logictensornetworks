@@ -13,7 +13,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-dynamic = ["dependencies"]
+dependencies = [
+    "numpy",
+    # tensorflow ships Apple Silicon wheels since 2.13; tensorflow-macos is discontinued
+    "tensorflow>=2.15",
+]
 keywords=["machine-learning","framework","neural-symbolic-computing","fuzzy-logic","tensorflow"]
 classifiers=[
     "Development Status :: 5 - Production/Stable",
@@ -28,9 +32,18 @@ classifiers=[
 "Homepage" = "https://github.com/logictensornetworks/logictensornetworks"
 "Issue Tracker" = "https://github.com/logictensornetworks/logictensornetworks/issues"
 
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
-optional-dependencies.examples = {file = ["requirements-examples.txt"]}
+[project.optional-dependencies]
+examples = [
+    "matplotlib",
+    "networkx",
+    "pandas",
+    "seaborn",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
 
 [tool.setuptools.packages.find]
 include = ["ltn"]
