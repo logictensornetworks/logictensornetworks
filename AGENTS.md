@@ -11,7 +11,12 @@ The project uses [uv](https://docs.astral.sh/uv/). Dependencies are declared in
 uv sync                                    # install dependencies (add --extra examples for examples/)
 uv run pytest test                         # run the test suite
 uv run pytest test/test_core.py -k name    # run a subset
+uv run ruff check --fix .                  # lint (the rule set is in pyproject.toml)
+uv run ruff format .                       # format
 ```
+
+CI fails if `ruff check .` or `ruff format --check .` report anything. `examples/` and
+`tutorials/` are not linted.
 
 After changing dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`.
 

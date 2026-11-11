@@ -17,6 +17,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v5
+    - uses: astral-sh/setup-uv@v10.3.3
+      with:
+        enable-cache: true
+    # Only the dev group (pytest, ruff), pinned by uv.lock: no need for TensorFlow to lint.
+    - name: Install ruff
+      run: uv sync --locked --only-dev
+    - name: Lint
+      run: uv run --no-sync ruff check .
+    - name: Format
+      run: uv run --no-sync ruff format --check .
+
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
