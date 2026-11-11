@@ -6,22 +6,24 @@ import ltn
 
 
 def Pred_equal_strict():
-    """Returns a 2-ary LTN predicate. The predicate returns 1.0 if the inputs are equal, 0.0 otherwise.
-    """
+    """Returns a 2-ary LTN predicate. The predicate returns 1.0 if the inputs are equal, 0.0 otherwise."""
     # The equality is measured on the list of tensors unpacked on dimension 0.
-    # The model will return n truth values, where n is the number of values on dimension 0 (the batch dimension). 
+    # The model will return n truth values, where n is the number of values on dimension 0 (the batch dimension).
     return ltn.Predicate.Lambda(
-            lambda args: tf.cast(
-                tf.reduce_all(tf.math.equal(args[0],args[1]),axis=tf.range(1,tf.rank(args[0]))),
-                dtype=tf.float32
-            ))
+        lambda args: tf.cast(
+            tf.reduce_all(tf.math.equal(args[0], args[1]), axis=tf.range(1, tf.rank(args[0]))),
+            dtype=tf.float32,
+        )
+    )
+
 
 def _euclidean_distance(u, v):
     """Euclidean distance along axis 1, with a zero (instead of NaN) gradient when u == v."""
-    squared = tf.reduce_sum(tf.square(u-v),axis=1)
-    non_zero = squared > 0.
+    squared = tf.reduce_sum(tf.square(u - v), axis=1)
+    non_zero = squared > 0.0
     # the sqrt gradient is infinite at 0; feed it a dummy value there so that tf.where does not propagate NaNs
-    return tf.where(non_zero, tf.sqrt(tf.where(non_zero, squared, 1.)), 0.)
+    return tf.where(non_zero, tf.sqrt(tf.where(non_zero, squared, 1.0)), 0.0)
+
 
 def Pred_equal_smooth_exp(alpha=1):
     """
@@ -29,9 +31,8 @@ def Pred_equal_smooth_exp(alpha=1):
     Euclidean distance between u and v.
     NOTE: this has zero gradient when u and v are strictly equal.
     """
-    return ltn.Predicate.Lambda(
-            lambda args: tf.exp(-alpha*_euclidean_distance(args[0],args[1]))
-    )
+    return ltn.Predicate.Lambda(lambda args: tf.exp(-alpha * _euclidean_distance(args[0], args[1])))
+
 
 def Pred_equal_smooth_inv(alpha=1):
     """
@@ -40,13 +41,14 @@ def Pred_equal_smooth_inv(alpha=1):
     NOTE: this has zero gradient when u and v are strictly equal.
     """
     return ltn.Predicate.Lambda(
-            lambda args: 1/(1+alpha*_euclidean_distance(args[0],args[1]))
+        lambda args: 1 / (1 + alpha * _euclidean_distance(args[0], args[1]))
     )
 
+
 def Func_add():
-    """Returns a 2-ary LTN function. The function returns the element-wise addition of the inputs.
-    """
-    return ltn.Function.Lambda(lambda args: args[0]+args[1])
+    """Returns a 2-ary LTN function. The function returns the element-wise addition of the inputs."""
+    return ltn.Function.Lambda(lambda args: args[0] + args[1])
+
 
 class LogitsToPredicateModel(tf.keras.Model):
     """
@@ -56,15 +58,19 @@ class LogitsToPredicateModel(tf.keras.Model):
     probabilities for the class at the given index.
         e.g. Cp([x,i]) where i=0,1,...,k-1, returns 1 value in [0,1] for class i
     """
+
     def __init__(self, logits_model, single_label=True):
         """
         logits_model: a tf Model that outputs logits
         single_label: True for exclusive classes (logits are translated into probabilities using softmax),
                 False for non-exclusive classes (logits are translated into probabilities using sigmoid)
         """
-        warn("`LogitsToPredicateModel` is deprecated. " 
-             "Use `ltn.Predicate.FromLogits` instead.", DeprecationWarning, stacklevel=2)
-        super(LogitsToPredicateModel, self).__init__()
+        warn(
+            "`LogitsToPredicateModel` is deprecated. Use `ltn.Predicate.FromLogits` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__()
         self.logits_model = logits_model
         self.to_probs = tf.nn.softmax if single_label else tf.math.sigmoid
 
