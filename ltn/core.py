@@ -529,21 +529,13 @@ class Wrapper_Quantifier:
             t_result = tf.where(non_empty_vars, t_result, empty_semantics)
         else:
             aggreg_axes = [wff.free_vars.index(var) for var in aggreg_vars]
+            t_result = self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs)
+            # On an empty domain, aggregators can return NaN (e.g. the mean of nothing). Replacing
+            # it keeps gradients finite: they flow back to an empty tensor, so the NaN never
+            # reaches a weight. This avoids a tf.cond branch in the graph at every quantifier.
             empty_domain = tf.reduce_any(tf.gather(tf.shape(wff.tensor), aggreg_axes) == 0)
             empty_semantics = 1.0 if self.semantics == "forall" else 0.0
-            # Do not evaluate the aggregator on an empty domain: even replacing
-            # its NaN result afterwards can leave NaN gradients. The empty sum
-            # preserves the result shape and a zero gradient to the input.
-            t_result = tf.cond(
-                empty_domain,
-                lambda: (
-                    tf.reduce_sum(
-                        wff.tensor, axis=aggreg_axes, keepdims=kwargs.get("keepdims", False)
-                    )
-                    + tf.cast(empty_semantics, wff.tensor.dtype)
-                ),
-                lambda: self.aggreg_op(wff.tensor, axis=aggreg_axes, **kwargs),
-            )
+            t_result = tf.where(empty_domain, empty_semantics, t_result)
         free_vars_remaining = [var for var in wff.free_vars if var not in aggreg_vars]
         result = Formula(t_result, free_vars_remaining)
         undiag(*variables)

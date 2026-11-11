@@ -53,19 +53,23 @@ class TestFromLogitsArguments(unittest.TestCase):
 
 
 class TestEmptyQuantifierDomains(unittest.TestCase):
+    # unstable variants included: their NaN on an empty domain must not leak either
+    operators = [
+        fuzzy_ops.Aggreg_Mean(),
+        fuzzy_ops.Aggreg_Min(),
+        fuzzy_ops.Aggreg_Max(),
+        fuzzy_ops.Aggreg_pMean(),
+        fuzzy_ops.Aggreg_pMean(stable=False),
+        fuzzy_ops.Aggreg_pMeanError(),
+        fuzzy_ops.Aggreg_pMeanError(stable=False),
+        fuzzy_ops.Aggreg_Prod(),
+    ]
+
     def test_empty_domain_uses_quantifier_semantics(self):
         x = ltn.Variable("x", tf.zeros([0, 1]))
         wff = core.Formula(tf.zeros([0]), ["x"])
-        operators = [
-            fuzzy_ops.Aggreg_Mean(),
-            fuzzy_ops.Aggreg_Min(),
-            fuzzy_ops.Aggreg_Max(),
-            fuzzy_ops.Aggreg_pMean(),
-            fuzzy_ops.Aggreg_pMeanError(),
-            fuzzy_ops.Aggreg_Prod(),
-        ]
         for semantics, expected in [("forall", 1.0), ("exists", 0.0)]:
-            for operator in operators:
+            for operator in self.operators:
                 with self.subTest(semantics=semantics, operator=type(operator).__name__):
                     result = ltn.Wrapper_Quantifier(operator, semantics)(x, wff)
                     self.assertEqual(result.free_vars, [])
@@ -115,28 +119,38 @@ class TestEmptyQuantifierDomains(unittest.TestCase):
 
     def test_empty_batch_has_finite_zero_gradients(self):
         predicate = ltn.Predicate.MLP([1], hidden_layer_sizes=())
-        forall = ltn.Wrapper_Quantifier(fuzzy_ops.Aggreg_pMeanError(), "forall")
+        for semantics, expected in [("forall", 1.0), ("exists", 0.0)]:
+            for operator in self.operators:
+                quantifier = ltn.Wrapper_Quantifier(operator, semantics)
 
-        def evaluate(values):
-            with tf.GradientTape() as tape:
-                x = ltn.Variable("x", values)
-                satisfaction = forall(x, predicate(x)).tensor
-            return satisfaction, tape.gradient(satisfaction, predicate.trainable_variables)
+                def evaluate(values):
+                    with tf.GradientTape() as tape:
+                        x = ltn.Variable("x", values)
+                        satisfaction = quantifier(x, predicate(x)).tensor
+                    return satisfaction, tape.gradient(satisfaction, predicate.trainable_variables)
 
-        graph_evaluate = tf.function(
-            evaluate, input_signature=[tf.TensorSpec([None, 1], tf.float32)]
-        )
-        for runner in [evaluate, graph_evaluate]:
-            with self.subTest(graph=runner is graph_evaluate):
-                satisfaction, gradients = runner(tf.zeros([0, 1]))
-                self.assertEqual(float(satisfaction), 1.0)
-                for gradient in gradients:
-                    self.assertIsNotNone(gradient)
-                    np.testing.assert_array_equal(gradient, tf.zeros_like(gradient))
-                satisfaction, gradients = runner(tf.ones([2, 1]))
-                self.assertTrue(np.isfinite(satisfaction))
-                self.assertTrue(all(np.all(np.isfinite(g)) for g in gradients))
-                self.assertTrue(any(np.any(g != 0.0) for g in gradients))
+                graph_evaluate = tf.function(
+                    evaluate, input_signature=[tf.TensorSpec([None, 1], tf.float32)]
+                )
+                for runner in [evaluate, graph_evaluate]:
+                    with self.subTest(
+                        semantics=semantics,
+                        operator=type(operator).__name__,
+                        stable=getattr(operator, "stable", None),
+                        graph=runner is graph_evaluate,
+                    ):
+                        self.check_gradients(runner, expected)
+
+    def check_gradients(self, runner, expected):
+        satisfaction, gradients = runner(tf.zeros([0, 1]))
+        self.assertEqual(float(satisfaction), expected)
+        for gradient in gradients:
+            self.assertIsNotNone(gradient)
+            np.testing.assert_array_equal(gradient, tf.zeros_like(gradient))
+        satisfaction, gradients = runner(tf.ones([2, 1]))
+        self.assertTrue(np.isfinite(satisfaction))
+        self.assertTrue(all(np.all(np.isfinite(g)) for g in gradients))
+        self.assertTrue(any(np.any(g != 0.0) for g in gradients))
 
 
 class TestTransposeTermFeatures(unittest.TestCase):
