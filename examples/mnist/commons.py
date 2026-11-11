@@ -36,7 +36,7 @@ def train(
     
     for epoch in range(epochs):
         for metrics in metrics_dict.values():
-            metrics.reset_states()
+            metrics.reset_state()
 
         for batch_elements in ds_train:
             train_step(*batch_elements,**scheduled_parameters[epoch])

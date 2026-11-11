@@ -146,7 +146,7 @@ if csv_path is not None:
 
 for epoch in range(EPOCHS):
     for metrics in metrics_dict.values():
-        metrics.reset_states()
+        metrics.reset_state()
 
     if 0 <= epoch < 200:
         p_exists = tf.constant(1.)
