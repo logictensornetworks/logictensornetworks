@@ -56,6 +56,12 @@ For the latest development version, clone the github repository and install it l
 pip install -e <local project path>
 ```
 
+To work on LTN itself, use [uv](https://docs.astral.sh/uv/), which installs the locked development environment (including pytest) from `uv.lock`:
+```
+uv sync                   # add --extra examples for the examples' dependencies
+uv run pytest test
+```
+
 Building from source requires setuptools 77 or newer. pip fetches it automatically; if you build with `--no-build-isolation` (e.g. for distro or conda packaging), upgrade setuptools in that environment first.
 
 ## Repository structure
@@ -65,7 +71,7 @@ Building from source requires setuptools 77 or newer. pip fetches it automatical
 - `ltn/utils.py` -- a collection of useful functions,
 - `tutorials/` -- tutorials to start with LTN,
 - `examples/` -- various problems approached using LTN,
-- `test/` -- tests, run with `python -m pytest test`.
+- `test/` -- tests, run with `uv run pytest test`.
 
 ## Getting Started
 

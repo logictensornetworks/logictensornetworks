@@ -1,3 +1,0 @@
-numpy
-# tensorflow ships Apple Silicon wheels since 2.13; tensorflow-macos is discontinued
-tensorflow>=2.15
