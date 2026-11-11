@@ -44,7 +44,8 @@ jobs:
     name: python ${{ matrix.python-version }}, tensorflow ${{ matrix.tensorflow }}${{ matrix.os != 'ubuntu-latest' && format(', {0}', matrix.os) || '' }}
     steps:
     - uses: actions/checkout@v5
-    - uses: astral-sh/setup-uv@v10
+    # setup-uv publishes no moving major tag (like v10) since v8: pin the exact version
+    - uses: astral-sh/setup-uv@v10.3.3
       with:
         python-version: ${{ matrix.python-version }}
         activate-environment: true
