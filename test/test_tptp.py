@@ -14,8 +14,8 @@ meaning.
 
 What counts as valid TPTP comes from the official grammar, SyntaxBNF v9.3.1.6, in
 https://github.com/TPTPWorld/SyntaxBNF. The tests only call `tptp.parse`, `tptp.parse_formula`,
-`tptp.parse_file` and `Grounding`, so they keep working if the parser is replaced. test_tptp_graph.py
-uses the same tables to test the LTN graph that the reader builds.
+`tptp.parse_file` and `Grounding`, so they keep working if the parser is replaced.
+test_tptp_graph.py uses the same tables to test the LTN graph that the reader builds.
 
 Section 3 tests `tptp.parse_file`, which reads a file together with the files it includes.
 """
@@ -61,7 +61,9 @@ FALSE = ltn.Proposition(0., trainable=False)
 P = ltn.Predicate.Lambda(lambda u: tf.sigmoid(3. * u[:, 0] - 2. * u[:, 1]))
 Q = ltn.Predicate.Lambda(lambda u: tf.sigmoid(2. * u[:, 1] - u[:, 0]))
 R = ltn.Predicate.Lambda(lambda args: tf.sigmoid(3. * args[0][:, 0] - 2. * args[1][:, 1]))
-W = ltn.Predicate.Lambda(lambda args: tf.sigmoid(args[0][:, 0] + args[1][:, 1] - 2. * args[2][:, 0]))
+W = ltn.Predicate.Lambda(
+    lambda args: tf.sigmoid(args[0][:, 0] + args[1][:, 1] - 2.0 * args[2][:, 0])
+)
 F = ltn.Function.Lambda(lambda u: tf.stack([1. - u[:, 1], u[:, 0]], axis=1))
 G = ltn.Function.Lambda(lambda args: args[0] - 0.5 * args[1])
 
@@ -72,12 +74,22 @@ Not = ltn.Wrapper_Connective(ltn.fuzzy_ops.Not_Std())
 And = ltn.Wrapper_Connective(ltn.fuzzy_ops.And_Prod())
 Or = ltn.Wrapper_Connective(ltn.fuzzy_ops.Or_ProbSum())
 Implies = ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach())
-Equiv = ltn.Wrapper_Connective(ltn.fuzzy_ops.Equiv(ltn.fuzzy_ops.And_Prod(), ltn.fuzzy_ops.Implies_Reichenbach()))
+Equiv = ltn.Wrapper_Connective(
+    ltn.fuzzy_ops.Equiv(ltn.fuzzy_ops.And_Prod(), ltn.fuzzy_ops.Implies_Reichenbach())
+)
 Forall = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2), semantics="forall")
 Exists = ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(p=6), semantics="exists")
 SatAgg = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError(p=2))
 
-CONSTANTS = {"a": a, "b": b, "c": c, "'not a word'": word, "123": number, "'123'": quoted_number, '"a"': distinct}
+CONSTANTS = {
+    "a": a,
+    "b": b,
+    "c": c,
+    "'not a word'": word,
+    "123": number,
+    "'123'": quoted_number,
+    '"a"': distinct,
+}
 PROPOSITIONS = {"s": S, "t": T}
 PREDICATES = {"p": P, "q": Q, "r": R, "w": W, "smokes": P, "cancer": Q, "friends": R}
 FUNCTIONS = {"f": F, "g": G}
@@ -91,7 +103,9 @@ def read(program: str, **options) -> Grounding:
     grounding.domain = ["a", "b", "c"]
     grounding.propositions = PROPOSITIONS
     grounding.functions = {name: FUNCTIONS[name] for name in grounding.functions}
-    grounding.predicates.update({name: PREDICATES[name] for name in grounding.predicates if name != "="})
+    grounding.predicates.update(
+        {name: PREDICATES[name] for name in grounding.predicates if name != "="}
+    )
     return grounding
 
 
@@ -99,6 +113,7 @@ def read(program: str, **options) -> Grounding:
 # Left: a formula, tested as fof(test, axiom, <formula>).
 # Right: the same formula with LTN core objects. `lambda:` only delays it until the test runs.
 
+# fmt: off
 FORMULAS = [
     # Atoms
     ("s",                                          lambda: S),
@@ -168,7 +183,8 @@ FORMULAS = [
     ("! [X,Y] : p(g(Y, X))",                       lambda: Forall([x, y], P(G([y, x])))),
     ("! [X] : X = a",                              lambda: Forall(x, Eq([x, a]))),
     ("! [X] : X != a",                             lambda: Forall(x, Not(Eq([x, a])))),
-    ("! [X] : ( X = a | X != b )",                 lambda: Forall(x, Or(Eq([x, a]), Not(Eq([x, b]))))),
+    ("! [X] : ( X = a | X != b )",
+        lambda: Forall(x, Or(Eq([x, a]), Not(Eq([x, b]))))),
     ("! [X] : ( p(X) & s )",                       lambda: Forall(x, And(P(x), S))),
     ("! [X] : ( p(X) => q(X) )",                   lambda: Forall(x, Implies(P(x), Q(x)))),
     ("? [X] : ( p(X) & q(X) )",                    lambda: Exists(x, And(P(x), Q(x)))),
@@ -177,7 +193,8 @@ FORMULAS = [
     ("! [X] : ! [Y] : r(X, Y)",                    lambda: Forall(x, Forall(y, R([x, y])))),
     ("! [X] : ? [Y] : r(X, Y)",                    lambda: Forall(x, Exists(y, R([x, y])))),
     ("? [Y] : ! [X] : r(X, Y)",                    lambda: Exists(y, Forall(x, R([x, y])))),
-    ("! [X] : ( p(X) => ? [Y] : r(X, Y) )",        lambda: Forall(x, Implies(P(x), Exists(y, R([x, y]))))),
+    ("! [X] : ( p(X) => ? [Y] : r(X, Y) )",
+        lambda: Forall(x, Implies(P(x), Exists(y, R([x, y]))))),
 
     # A quantifier applies to the next unit only: the q(a) below is outside its scope
     ("! [X] : p(X) & q(a)",                        lambda: And(Forall(x, P(x)), Q(a))),
@@ -233,10 +250,12 @@ FORMULAS = [
             Implies(Eq([F(x), y]), Not(Eq([x, c])))),
             R([x, G([y, F(c)])]))))),
 ]
+# fmt: on
 
 # Left: a clause, tested as cnf(test, axiom, <clause>).
 # Right: the same clause with LTN core objects.
 
+# fmt: off
 CLAUSES = [
     # Literals
     ("p(a)",                                       lambda: P(a)),
@@ -251,7 +270,8 @@ CLAUSES = [
     # Disjunctions
     ("p(a) | q(b)",                                lambda: Or(P(a), Q(b))),
     ("p(a) | q(b) | s",                            lambda: Or(Or(P(a), Q(b)), S)),
-    ("~ p(a) | a = b | a != c",                    lambda: Or(Or(Not(P(a)), Eq([a, b])), Not(Eq([a, c])))),
+    ("~ p(a) | a = b | a != c",
+        lambda: Or(Or(Not(P(a)), Eq([a, b])), Not(Eq([a, c])))),
     ("( p(a) | q(b) )",                            lambda: Or(P(a), Q(b))),
     ("( ( p(a) | q(b) ) )",                        lambda: Or(P(a), Q(b))),
 
@@ -260,9 +280,12 @@ CLAUSES = [
     ("~ p(X) | q(X)",                              lambda: Forall(x, Or(Not(P(x)), Q(x)))),
     ("p(X) | q(Y)",                                lambda: Forall([x, y], Or(P(x), Q(y)))),
     ("r(X, Y) | p(X)",                             lambda: Forall([x, y], Or(R([x, y]), P(x)))),
-    ("X = a | X != b",                             lambda: Forall(x, Or(Eq([x, a]), Not(Eq([x, b]))))),
-    ("p(f(X)) | r(X, g(X, a))",                    lambda: Forall(x, Or(P(F(x)), R([x, G([x, a])])))),
+    ("X = a | X != b",
+        lambda: Forall(x, Or(Eq([x, a]), Not(Eq([x, b]))))),
+    ("p(f(X)) | r(X, g(X, a))",
+        lambda: Forall(x, Or(P(F(x)), R([x, G([x, a])])))),
 ]
+# fmt: on
 
 
 def smokes_friends_cancer():
@@ -288,6 +311,7 @@ def smokes_friends_cancer():
 # Left: a name for the test and a whole file.
 # Right: one LTN core formula per statement of the file.
 
+# fmt: off
 FILES = [
     ("comments between tokens", """
         % A line comment.
@@ -342,6 +366,7 @@ FILES = [
      """,
      smokes_friends_cancer),
 ]
+# fmt: on
 
 # Which statements form the knowledge base. Every role except the two kinds of conjecture counts
 # as an axiom. The grammar gives `plain` no meaning, and reading it as an axiom is our choice.
@@ -377,6 +402,7 @@ def knowledge_base():
 
 # Valid programs that only need to parse.
 
+# fmt: off
 PARSE_ONLY = [
     # Files without statements
     "",
@@ -436,9 +462,11 @@ PARSE_ONLY = [
     "fof(test, axiom, p(a), unknown, [$fot($sum(1, 2))]).",
     "fof(test, axiom, p(a), unknown, [$cnf($less(1, 2))]).",
 ]
+# fmt: on
 
 # Programs that are not valid TPTP.
 
+# fmt: off
 NOT_TPTP = [
     # Statements
     ("p(a).",                                      "no language"),
@@ -543,13 +571,13 @@ NOT_TPTP = [
     (r"fof(x, axiom, p('a\b')).",                  "a backslash only escapes ' and itself"),
     (r'fof(x, axiom, p("a\b")).',                  'a backslash only escapes " and itself'),
     ("fof(x, axiom, p('café')).",             "only visible ASCII characters"),
-    ("fof(x, 'axiom', p(a)).",                     "a role is a <lower_word>, not an <atomic_word>"),
+    ("fof(x, 'axiom', p(a)).",                     "a role can't be quoted: it is a <lower_word>"),
 
     # Wrong, not just unsupported
     ("include",                                    "include without parentheses"),
     ("include('a.ax')",                            "include without a full stop"),
     ("include('a.ax', []).",                       "include of an empty selection"),
-    ('include("a.ax").',                           "a file name is an <atomic_word>, not a distinct object"),
+    ('include("a.ax").',                           "a file name can't be a distinct object"),
     ("tff",                                        "tff without parentheses"),
     ("fof(x, axiom, p(-)).",                       "a minus sign without a number"),
     ("fof(x, axiom, p(`)).",                       "a back quote without a word"),
@@ -560,19 +588,21 @@ NOT_TPTP = [
     ("fof(x, axiom, $foo(a).",                     "no closing parenthesis after a defined symbol"),
     ("fof(x, axiom, [p(a)] --> [q(a)]",            "file cut off after a sequent"),
 ]
+# fmt: on
 
 # Valid TPTP that the reader refuses, with a clear error, instead of misreading it.
 
+# fmt: off
 NOT_SUPPORTED = [
     ("include('Axioms/SET001-0.ax').",             "include"),
     ("include('Axioms/SET001-0.ax', [a, b]).",     "include of selected formulas"),
     ("include('Axioms/SET001-0.ax', *).",          "include of every formula, with *"),
     ("include('Axioms/SET001-0.ax', [a], space).", "include with a space name"),
-    ("fof(x, unknown, p(a)).",                     "role unknown, which the grammar calls an error"),
+    ("fof(x, unknown, p(a)).",                     "role unknown, an error situation"),
     ("tff(x, axiom, p(a)).",                       "language tff"),
-    ("tff(x, type, p: $int > $o).",                "language tff, with characters fof doesn't have"),
+    ("tff(x, type, p: $int > $o).",                "language tff, with characters fof lacks"),
     ("thf(x, axiom, p).",                          "language thf"),
-    ("thf(x, axiom, p @ a).",                      "language thf, with characters fof doesn't have"),
+    ("thf(x, axiom, p @ a).",                      "language thf, with characters fof lacks"),
     ("tcf(x, axiom, p(a)).",                       "language tcf"),
     ("tpi(x, axiom, p(a)).",                       "language tpi"),
     ("fof(x, axiom, [p(a)] --> [q(a)]).",          "sequents"),
@@ -598,8 +628,8 @@ NOT_SUPPORTED = [
     ("cnf(x, axiom, ~ $less(1, 2)).",              "a negated defined predicate"),
     ("fof(x, axiom, `P).",                         "a back-quoted constant"),
     ("fof(x, axiom, p(`A)).",                      "a back-quoted term"),
-    ("fof(x, axiom, p(a), unknown, [$tff(p)]).",   "$tff(...) in an annotation, which needs a TFF parser"),
-    ("fof(x, axiom, p(a), unknown, [$thf(p)]).",   "$thf(...) in an annotation, which needs a THF parser"),
+    ("fof(x, axiom, p(a), unknown, [$tff(p)]).",   "$tff(...) in an annotation, for a TFF parser"),
+    ("fof(x, axiom, p(a), unknown, [$thf(p)]).",   "$thf(...) in an annotation, for a THF parser"),
 
     # Groundings are looked up by name, so a name can only have one arity
     ("fof(x, axiom, p(a) & p(a, b)).",             "predicate with two arities"),
@@ -607,6 +637,7 @@ NOT_SUPPORTED = [
     ("fof(x, axiom, p(f(a)) & p(f(a, b))).",       "function with two arities"),
     ("fof(x, axiom, p(a) & p(a(b))).",             "constant and function of the same name"),
 ]
+# fmt: on
 
 
 # ------------------------------------------------------------------------------- The tests
@@ -627,7 +658,10 @@ PROGRAMS = {name: (program, core) for name, program, core in programs()}
 def values_read_from(program: str, **options) -> list[float]:
     """The truth value that the reader gives to each statement of `program`."""
     grounding = read(program, **options)
-    return [float(grounding.evaluate(statement.formula).tensor) for statement in grounding.problem.statements]
+    return [
+        float(grounding.evaluate(statement.formula).tensor)
+        for statement in grounding.problem.statements
+    ]
 
 
 def values_of(*formulas):
@@ -662,7 +696,9 @@ def test_syntax_unsupported_program_is_rejected(program):
         tptp.parse(program)
 
 
-@pytest.mark.parametrize("query", ["p(X)", "! [X] : r(X, Y)", "p(a) garbage", "p(a) .", "fof(x, axiom, p(a))."])
+@pytest.mark.parametrize(
+    "query", ["p(X)", "! [X] : r(X, Y)", "p(a) garbage", "p(a) .", "fof(x, axiom, p(a))."]
+)
 def test_syntax_invalid_query_is_rejected(query):
     with pytest.raises(SyntaxError):
         tptp.parse_formula(query)
@@ -732,7 +768,8 @@ def test_value_includes_the_implicit_axiom_that_values_differ():
     # formula for each ordered pair of different values, aggregated like a universal quantifier.
     implicit = SatAgg([Not(Eq([distinct, number])), Not(Eq([number, distinct]))])
     program = 'fof(test, axiom, p("a") & p(123)).'
-    assert [float(read(program).sat())] == values_of(SatAgg([And(P(distinct), P(number)), implicit]))
+    expected = SatAgg([And(P(distinct), P(number)), implicit])
+    assert [float(read(program).sat())] == values_of(expected)
 
 
 def test_value_of_a_long_chain():
@@ -749,17 +786,20 @@ def ranging_over(*individuals) -> ltn.Variable:
 
 def test_value_with_function_terms_of_depth_1():
     u = ranging_over(a, b, c, F(a), F(b), F(c))
-    assert values_read_from("fof(test, axiom, ! [X] : p(f(X))).", herbrand_depth=1) == values_of(Forall(u, P(F(u))))
+    program = "fof(test, axiom, ! [X] : p(f(X)))."
+    assert values_read_from(program, herbrand_depth=1) == values_of(Forall(u, P(F(u))))
 
 
 def test_value_with_function_terms_of_depth_2():
     u = ranging_over(a, b, c, F(a), F(b), F(c), F(F(a)), F(F(b)), F(F(c)))
-    assert values_read_from("fof(test, axiom, ! [X] : p(f(X))).", herbrand_depth=2) == values_of(Forall(u, P(F(u))))
+    program = "fof(test, axiom, ! [X] : p(f(X)))."
+    assert values_read_from(program, herbrand_depth=2) == values_of(Forall(u, P(F(u))))
 
 
 def test_value_with_a_binary_function_term():
     u = ranging_over(a, b, c, *[G([v, w]) for v in (a, b, c) for w in (a, b, c)])
-    assert values_read_from("fof(test, axiom, ! [X] : q(g(X, a))).", herbrand_depth=1) == values_of(Forall(u, Q(G([u, a]))))
+    program = "fof(test, axiom, ! [X] : q(g(X, a)))."
+    assert values_read_from(program, herbrand_depth=1) == values_of(Forall(u, Q(G([u, a]))))
 
 
 # 3. Files. tptp.parse_file reads a file and puts the statements of each included file in place of
@@ -777,13 +817,18 @@ def library(tmp_path, monkeypatch):
     """Laid out like TPTP: an axiom file includes another one by its name from the root."""
     monkeypatch.delenv("TPTP", raising=False)
     write(tmp_path, "Axioms/B.ax", "fof(b1, axiom, s).\n")
-    write(tmp_path, "Axioms/A.ax", "include('Axioms/B.ax').\nfof(a1, axiom, p(a)).\nfof(a2, axiom, q(a)).\n")
+    axioms = "include('Axioms/B.ax').\nfof(a1, axiom, p(a)).\nfof(a2, axiom, q(a)).\n"
+    write(tmp_path, "Axioms/A.ax", axioms)
     return tmp_path
 
 
 def test_file_gets_the_included_statements_in_place(library):
-    path = write(library, "Problems/P.p", "fof(p1, axiom, t).\ninclude('Axioms/A.ax').\nfof(goal, conjecture, p(1)).\n")
-    pasted = "fof(p1, axiom, t). fof(b1, axiom, s). fof(a1, axiom, p(a)). fof(a2, axiom, q(a)). fof(goal, conjecture, p(1))."
+    text = "fof(p1, axiom, t).\ninclude('Axioms/A.ax').\nfof(goal, conjecture, p(1)).\n"
+    path = write(library, "Problems/P.p", text)
+    pasted = (
+        "fof(p1, axiom, t). fof(b1, axiom, s). fof(a1, axiom, p(a)). fof(a2, axiom, q(a)). "
+        "fof(goal, conjecture, p(1))."
+    )
     assert tptp.parse_file(path, root=library) == tptp.parse(pasted)
 
 
@@ -800,7 +845,8 @@ def test_include_selects_statements_by_name(library, selection, pasted):
 def test_include_is_looked_up_next_to_the_file_first(library):
     write(library, "Problems/Axioms/B.ax", "fof(near, axiom, t).\n")
     path = write(library, "Problems/P.p", "include('Axioms/B.ax').\n")
-    assert [statement.name for statement in tptp.parse_file(path, root=library).statements] == ["near"]
+    problem = tptp.parse_file(path, root=library)
+    assert [statement.name for statement in problem.statements] == ["near"]
 
 
 def test_root_defaults_to_the_environment_variable_TPTP(library, monkeypatch):
@@ -846,7 +892,10 @@ def test_error_in_an_included_file_names_the_file(library, text, error):
 # The parser is optional.
 
 def test_ltn_works_without_lark():
-    code = "import sys; sys.modules['lark'] = None; import ltn, ltn.parser; print('ltn works'); import ltn.parser.tptp"
+    code = (
+        "import sys; sys.modules['lark'] = None; import ltn, ltn.parser; print('ltn works'); "
+        "import ltn.parser.tptp"
+    )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert "ltn works" in result.stdout
     assert "pip install ltn[parser]" in result.stderr

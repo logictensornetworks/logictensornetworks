@@ -1,8 +1,8 @@
 """Turns a syntax tree into LTN objects. It doesn't depend on the syntax the tree was read from.
 
-Formulas are parsed once into a syntax tree. Every call to `Grounding.sat()` evaluates the tree again,
-so the LTN variables built from trainable constants are created while the caller's GradientTape is
-recording.
+Formulas are parsed once into a syntax tree. Every call to `Grounding.sat()` evaluates the tree
+again, so the LTN variables built from trainable constants are created while the caller's
+GradientTape is recording.
 """
 from __future__ import annotations
 
@@ -14,7 +14,19 @@ import warnings
 import tensorflow as tf
 
 import ltn
-from ltn.parser.tree import AXIOM_ROLES, Atom, BinOp, Chain, Fn, Not, Problem, Quant, Statement, Truth, Var
+from ltn.parser.tree import (
+    AXIOM_ROLES,
+    Atom,
+    BinOp,
+    Chain,
+    Fn,
+    Not,
+    Problem,
+    Quant,
+    Statement,
+    Truth,
+    Var,
+)
 
 
 def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
@@ -52,8 +64,12 @@ class Grounding:
             self.domain.append(name)
             if value is not None:
                 by_value[value] = self.constants[name]
-        self.functions = {f: ltn.Function.MLP([d] * n, d) for f, n in problem.functions.items() if n > 0}
-        self.predicates = {p: ltn.Predicate.MLP([d] * n) for p, n in problem.predicates.items() if n > 0}
+        self.functions = {
+            f: ltn.Function.MLP([d] * n, d) for f, n in problem.functions.items() if n > 0
+        }
+        self.predicates = {
+            p: ltn.Predicate.MLP([d] * n) for p, n in problem.predicates.items() if n > 0
+        }
         self.predicates["="] = smooth_equality()
         self.propositions = {p: ltn.Proposition(0.5, trainable=True)
                              for p, n in problem.predicates.items() if n == 0}
@@ -77,7 +93,8 @@ class Grounding:
         params += [p.tensor for p in self.propositions.values()]
         for symbol in itertools.chain(self.functions.values(), self.predicates.values()):
             params += symbol.model.trainable_variables
-        return list({id(param): param for param in params}.values())  # equal values share a constant
+        # constants with equal values share one grounding, so a parameter can come twice
+        return list({id(param): param for param in params}.values())
 
     def individuals(self) -> list[ltn.core.Term]:
         """The individuals that variables range over. Call it inside the tape when training:
@@ -102,10 +119,14 @@ class Grounding:
         try:
             return self._eval(formula, {}, lambda name: self._variable(name, individuals, tape))
         except RecursionError:
-            raise NotImplementedError(f"The formula is nested too deeply for Python's recursion limit "
-                                      f"({sys.getrecursionlimit()}).") from None
+            raise NotImplementedError(
+                f"The formula is nested too deeply for Python's recursion limit "
+                f"({sys.getrecursionlimit()})."
+            ) from None
 
-    def sat(self, statements: list[Statement] | None = None, tape: tf.GradientTape | None = None) -> tf.Tensor:
+    def sat(
+        self, statements: list[Statement] | None = None, tape: tf.GradientTape | None = None
+    ) -> tf.Tensor:
         """The satisfaction of `statements`, by default the axioms, as one truth value. It includes
         the implicit axiom that different values are unequal, and it is 1 if there is nothing to
         satisfy."""
@@ -160,21 +181,29 @@ class Grounding:
                 sat = self.sat(statements, tape=tape)
                 loss = 1. - sat
             grads = tape.gradient(loss, params)
-            pairs = [(g, p) for g, p in zip(grads, params) if g is not None]
+            pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
             if pairs:  # without axioms, for example, there is nothing to train
                 optimizer.apply_gradients(pairs)
             return sat
 
         if reuse_graph and optimizer is kept_optimizer and key == kept_statements:
-            step = kept_step  # the new tf.function costs nothing: it has no graph until its first call
+            # the new tf.function costs nothing: it has no graph until its first call
+            step = kept_step
         for _ in range(steps):
             sat = step()
         if reuse_graph:  # only now, so that a call that fails keeps nothing
             self._kept_step = step, optimizer, key
         return float(sat)
 
-    def refute(self, formula, q: float = 0.95, steps: int = 2000, alpha: float = 0.05, beta: float = 10.,
-               optimizer: tf.keras.optimizers.Optimizer | None = None) -> tuple[float, float]:
+    def refute(
+        self,
+        formula,
+        q: float = 0.95,
+        steps: int = 2000,
+        alpha: float = 0.05,
+        beta: float = 10.0,
+        optimizer: tf.keras.optimizers.Optimizer | None = None,
+    ) -> tuple[float, float]:
         """Reasoning by refutation, as in tutorials/4-reasoning.ipynb: look for a grounding that
         satisfies the axioms (sat >= q) but falsifies `formula`. Returns the final satisfaction
         of the axioms and truth value of `formula`. This is a local search: a counterexample
@@ -192,7 +221,7 @@ class Grounding:
                 truth = self.evaluate(formula, tape=tape).tensor
                 loss = truth + tf.keras.activations.elu(beta * (q - sat_kb), alpha=alpha)
             grads = tape.gradient(loss, params)
-            pairs = [(g, p) for g, p in zip(grads, params) if g is not None]
+            pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
             if pairs:
                 optimizer.apply_gradients(pairs)
             return sat_kb, truth
@@ -213,14 +242,19 @@ class Grounding:
             return None
         k = len(names)
         values = tf.stack([self.constants[name].tensor for name in names])
-        equal = tf.reshape(self.predicates["="].model([tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]), [k, k])
+        pairs = [tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]
+        equal = tf.reshape(self.predicates["="].model(pairs), [k, k])
         unequal = tf.boolean_mask(1. - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
         return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
 
-    def _variable(self, label: str, individuals: list[ltn.core.Term], tape: tf.GradientTape | None) -> ltn.Variable:
+    def _variable(
+        self, label: str, individuals: list[ltn.core.Term], tape: tf.GradientTape | None
+    ) -> ltn.Variable:
         if not individuals:
-            raise ValueError("Variables have nothing to range over, because the problem has no constants. "
-                             "Pass extra_individuals=1 or more to Grounding, or fill its domain.")
+            raise ValueError(
+                "Variables have nothing to range over, because the problem has no constants. "
+                "Pass extra_individuals=1 or more to Grounding, or fill its domain."
+            )
         if tape is not None:
             return ltn.Variable.from_constants(label, individuals, tape=tape)
         with warnings.catch_warnings():  # no gradients needed, e.g. when querying
@@ -229,12 +263,13 @@ class Grounding:
 
     @staticmethod
     def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:
-        """Clear errors for a symbol that a query uses wrongly, instead of a KeyError or a Keras error."""
+        """A clear error for a symbol that a query uses wrongly, instead of a KeyError."""
         if name not in groundings:
             raise ValueError(f"{name} is not a {kind} of the problem.")
         if arities.get(name, arity) != arity:
             expected = arities[name]
-            raise ValueError(f"The {kind} {name} takes {expected} argument{'s' * (expected != 1)}, not {arity}.")
+            plural = "s" * (expected != 1)
+            raise ValueError(f"The {kind} {name} takes {expected} argument{plural}, not {arity}.")
 
     @staticmethod
     def _apply(symbol: ltn.Predicate | ltn.Function, args: list) -> ltn.core.Expression:
@@ -256,12 +291,15 @@ class Grounding:
                 self._check(self.propositions, {}, f.pred, 0, "proposition")
                 return self.propositions[f.pred]
             if f.pred == "=":
-                values = [self.problem.values.get(a.name) if isinstance(a, Fn) and not a.args else None
-                          for a in f.args]
+                values = [
+                    self.problem.values.get(a.name) if isinstance(a, Fn) and not a.args else None
+                    for a in f.args
+                ]
                 if None not in values:  # both are interpreted as themselves
                     return ltn.Proposition(1. if values[0] == values[1] else 0., trainable=False)
             else:
-                self._check(self.predicates, self.problem.predicates, f.pred, len(f.args), "predicate")
+                arity = len(f.args)
+                self._check(self.predicates, self.problem.predicates, f.pred, arity, "predicate")
             return self._apply(self.predicates[f.pred], [recurse(a) for a in f.args])
         if isinstance(f, Truth):
             return ltn.Proposition(1. if f.value else 0., trainable=False)
@@ -274,6 +312,7 @@ class Grounding:
         if isinstance(f, Quant):
             bound = {name: make_variable(name) for name in f.vars}
             body = self._eval(f.body, {**env, **bound}, make_variable)
-            used = [v for v in bound.values() if v.label in body.free_vars]  # LTN rejects vacuous ones
+            # LTN rejects a quantifier over a variable that the body doesn't use
+            used = [v for v in bound.values() if v.label in body.free_vars]
             return self.quantifiers[f.kind](used, body) if used else body
         raise TypeError(f"Unknown node {f!r}.")

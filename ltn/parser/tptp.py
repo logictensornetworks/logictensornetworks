@@ -14,10 +14,26 @@ import sys
 try:
     import lark
 except ImportError as error:
-    raise ImportError("ltn.parser.tptp needs lark. Install it with: pip install ltn[parser]") from error
+    raise ImportError(
+        "ltn.parser.tptp needs lark. Install it with: pip install ltn[parser]"
+    ) from error
 
-from ltn.parser.tree import (AXIOM_ROLES, CONJECTURE_ROLES, Atom, BinOp, Chain, Fn, Not, Problem, Quant, Refused,
-                             Statement, Truth, Var, free_vars)
+from ltn.parser.tree import (
+    AXIOM_ROLES,
+    CONJECTURE_ROLES,
+    Atom,
+    BinOp,
+    Chain,
+    Fn,
+    Not,
+    Problem,
+    Quant,
+    Refused,
+    Statement,
+    Truth,
+    Var,
+    free_vars,
+)
 
 # The grammar lists `unknown` as a role, but calls it an error situation.
 UNSUPPORTED_ROLES = ("type", "interpretation", "logic", "unknown")
@@ -51,7 +67,9 @@ class _SyntaxTree(lark.Transformer):
     def fof_annotated(self, name, role, formula, *annotations) -> Statement:
         free = free_vars(formula)
         if free:
-            raise SyntaxError(f"All variables of a fof formula must be quantified: {free} in {name}.")
+            raise SyntaxError(
+                f"All variables of a fof formula must be quantified: {free} in {name}."
+            )
         return Statement(name, role, formula)
 
     def cnf_annotated(self, name, role, formula, *annotations) -> Statement:
@@ -62,7 +80,9 @@ class _SyntaxTree(lark.Transformer):
 
     def include(self, keyword, file_name, names=None, space=None) -> Include:
         if space is not None:
-            raise NotImplementedError(f"include(...) with a space name at line {keyword.line} is not supported.")
+            raise NotImplementedError(
+                f"include(...) with a space name at line {keyword.line} is not supported."
+            )
         if file_name.startswith("'"):
             file_name = re.sub(r"\\(['\\])", r"\1", file_name[1:-1])
         return Include(file_name, names, keyword.line)
@@ -71,10 +91,15 @@ class _SyntaxTree(lark.Transformer):
         return names or None  # * selects every statement
 
     def unsupported_language(self, language):
-        raise NotImplementedError(f"{language}(...) at line {language.line} is not supported, only fof(...) and cnf(...).")
+        raise NotImplementedError(
+            f"{language}(...) at line {language.line} is not supported, only fof(...) and cnf(...)."
+        )
 
     def unsupported_formula_data(self, language):
-        raise NotImplementedError(f"{language}(...) at line {language.line} is not supported, only $fof(...) and $cnf(...).")
+        raise NotImplementedError(
+            f"{language}(...) at line {language.line} is not supported, "
+            "only $fof(...) and $cnf(...)."
+        )
 
     def formula_role(self, word, *subrole) -> str:
         if word not in AXIOM_ROLES + CONJECTURE_ROLES + UNSUPPORTED_ROLES:
@@ -136,21 +161,29 @@ class _SyntaxTree(lark.Transformer):
     def fof_unsupported_term(self, word, *args) -> Refused:
         if word in ("$true", "$false"):
             return Refused(SyntaxError(f"{word} at line {word.line} is a formula, not a term."))
-        return Refused(NotImplementedError(f"Symbols such as {word} at line {word.line} are not supported."))
+        error = f"Symbols such as {word} at line {word.line} are not supported."
+        return Refused(NotImplementedError(error))
 
     def fof_sequent(self, *parts) -> Refused:
         return Refused(NotImplementedError("Sequents are not supported."))
 
 
-_parser = lark.Lark.open("tptp.lark", rel_to=__file__, parser="lalr", start=["tptp_file", "fof_logic_formula"],
-                         transformer=_SyntaxTree())
+_parser = lark.Lark.open(
+    "tptp.lark",
+    rel_to=__file__,
+    parser="lalr",
+    start=["tptp_file", "fof_logic_formula"],
+    transformer=_SyntaxTree(),
+)
 
 
 def _token_name(terminal: str) -> str:
     if terminal == "$END":
         return "the end of the file"
     pattern = _parser.get_terminal(terminal).pattern
-    return repr(pattern.value) if isinstance(pattern, lark.lexer.PatternStr) else terminal.lower().replace("_", " ")
+    if isinstance(pattern, lark.lexer.PatternStr):
+        return repr(pattern.value)
+    return terminal.lower().replace("_", " ")
 
 
 def _read(text: str, start: str):
@@ -158,8 +191,11 @@ def _read(text: str, start: str):
         return _parser.parse(text, start=start)
     except lark.UnexpectedInput as error:
         expected = error.accepts if isinstance(error, lark.UnexpectedToken) else error.allowed
-        raise SyntaxError(f"Invalid TPTP at line {error.line}, column {error.column}, expected "
-                          f"{', '.join(sorted(map(_token_name, expected)))}:\n{error.get_context(text)}") from None
+        names = ", ".join(sorted(map(_token_name, expected)))
+        raise SyntaxError(
+            f"Invalid TPTP at line {error.line}, column {error.column}, expected {names}:\n"
+            f"{error.get_context(text)}"
+        ) from None
 
 
 def _guarded(action):
@@ -216,7 +252,8 @@ def parse_file(path, root=None) -> Problem:
 
 def _statements(path: pathlib.Path, root, cache: dict, including: tuple) -> list[Statement]:
     if path in including:
-        raise SyntaxError(f"A file includes itself: {' includes '.join(map(str, (*including, path)))}.")
+        chain = " includes ".join(map(str, (*including, path)))
+        raise SyntaxError(f"A file includes itself: {chain}.")
     if path not in cache:
         try:
             cache[path] = _read(path.read_text(encoding="utf-8"), "tptp_file")
@@ -231,8 +268,10 @@ def _statements(path: pathlib.Path, root, cache: dict, including: tuple) -> list
         if item.names is not None:
             missing = sorted(set(item.names) - {statement.name for statement in included})
             if missing:
-                raise SyntaxError(f"In {path}: the include at line {item.line} selects {', '.join(missing)}, "
-                                  f"which {item.file} doesn't have.")
+                raise SyntaxError(
+                    f"In {path}: the include at line {item.line} selects {', '.join(missing)}, "
+                    f"which {item.file} doesn't have."
+                )
             included = [statement for statement in included if statement.name in item.names]
         statements += included
     return statements
@@ -244,9 +283,11 @@ def _find(include: Include, path: pathlib.Path, root) -> pathlib.Path:
         candidate = place / include.file
         if candidate.is_file():
             return candidate.resolve()
-    raise FileNotFoundError(f"In {path}: the file of include('{include.file}') at line {include.line} is in none of "
-                            f"{', '.join(map(str, places))}. For a problem of the TPTP library, pass root= or set the "
-                            f"environment variable TPTP to the folder of the library.")
+    raise FileNotFoundError(
+        f"In {path}: the file of include('{include.file}') at line {include.line} is in none "
+        f"of {', '.join(map(str, places))}. For a problem of the TPTP library, pass root= or "
+        "set the environment variable TPTP to the folder of the library."
+    )
 
 
 def parse_formula(text: str):

@@ -8,8 +8,8 @@ value stays the same. So this file looks at what the reader builds, in four ways
    definition.
 2. Gradients: inside a GradientTape, each program has the same gradients as its LTN core definition.
 3. Groundings: a problem gets one LTN object per symbol, of the right kind and size.
-4. Training: training a problem read from TPTP gives the same parameters as training the same problem
-   written by hand in LTN. Reasoning by refutation is compared in the same way.
+4. Training: training a problem read from TPTP gives the same parameters as training the same
+   problem written by hand in LTN. Reasoning by refutation is compared in the same way.
 
 Tests 1 and 2 use the tables of test_tptp.py, so they add nothing new to review. The only new thing
 to review is the pair PROBLEM and by_hand(), under "A whole problem".
@@ -28,7 +28,7 @@ from ltn.parser import Grounding, tptp
 
 from . import test_tptp as tables
 
-# ------------------------------------------------------------------------------- Trainable grounding
+# ------------------------------------------------------------------------------ Trainable grounding
 
 CONSTANTS = {"a": "a", "b": "b", "c": "c", "'not a word'": "word", "123": "number",
              "'123'": "quoted_number", '"a"': "distinct"}
@@ -61,17 +61,21 @@ def read(program: str, **options) -> Grounding:
 
 
 def reader_column(grounding: Grounding, tape: tf.GradientTape) -> list[tf.Tensor]:
-    return [grounding.evaluate(statement.formula, tape=tape).tensor for statement in grounding.problem.statements]
+    return [
+        grounding.evaluate(statement.formula, tape=tape).tensor
+        for statement in grounding.problem.statements
+    ]
 
 
 def core_column(core, program: str, tape: tf.GradientTape, monkeypatch) -> list[tf.Tensor]:
-    """The right column of a table, with x, y and z built from the constants inside the tape, as the
-    reader does. They have the labels of the TPTP variables because LTN iterates over sets of labels,
-    so the order of some axes depends on how a label is spelled."""
+    """The right column of a table, with x, y and z built from the constants inside the tape, as
+    the reader does. They have the labels of the TPTP variables because LTN iterates over sets of
+    labels, so the order of some axes depends on how a label is spelled."""
     labels = ("P", "Q", "Z") if "friends" in program else ("X", "Y", "Z")
-    for attribute, label in zip("xyz", labels):
+    for attribute, label in zip("xyz", labels, strict=True):
         individuals = [tables.a, tables.b, tables.c]
-        monkeypatch.setattr(tables, attribute, ltn.Variable.from_constants(label, individuals, tape=tape))
+        variable = ltn.Variable.from_constants(label, individuals, tape=tape)
+        monkeypatch.setattr(tables, attribute, variable)
     formulas = core()
     return [formula.tensor for formula in (formulas if isinstance(formulas, list) else [formulas])]
 
@@ -85,17 +89,24 @@ def fingerprint(graph: tf.Graph) -> list[str]:
     captured = {internal.name: external for external, internal in graph.captures}
     hashes = {}
 
+    def value_of(tensor, external):
+        return external.numpy() if external is not None else tf.get_static_value(tensor)
+
     def visit(tensor):
         if tensor.name not in hashes:
             external = captured.get(tensor.name)
             if external is not None and external.dtype == tf.resource:
                 parts = "variable", id(external)
-            elif (value := external.numpy() if external is not None else tf.get_static_value(tensor)) is not None:
+            elif (value := value_of(tensor, external)) is not None:
                 parts = "value", value.dtype.name, value.shape, value.tobytes()
             else:
-                attributes = sorted((key, attribute.SerializeToString(deterministic=True))
-                                    for key, attribute in tensor.op.node_def.attr.items() if not key.startswith("_"))
-                parts = tensor.op.type, attributes, tensor.value_index, [visit(i) for i in tensor.op.inputs]
+                attributes = sorted(
+                    (key, attribute.SerializeToString(deterministic=True))
+                    for key, attribute in tensor.op.node_def.attr.items()
+                    if not key.startswith("_")
+                )
+                inputs = [visit(i) for i in tensor.op.inputs]
+                parts = tensor.op.type, attributes, tensor.value_index, inputs
             hashes[tensor.name] = hashlib.sha256(repr(parts).encode()).hexdigest()
         return hashes[tensor.name]
 
@@ -117,8 +128,9 @@ def assert_same_gradients(first, second, variables: list[tf.Variable]) -> None:
         first_outputs = first(tape)
         second_outputs = second(tape)
     assert len(first_outputs) == len(second_outputs)
-    for output, other in zip(first_outputs, second_outputs):
-        for gradient, expected in zip(tape.gradient(output, variables), tape.gradient(other, variables)):
+    for output, other in zip(first_outputs, second_outputs, strict=True):
+        gradients = tape.gradient(output, variables), tape.gradient(other, variables)
+        for gradient, expected in zip(*gradients, strict=True):
             if expected is None:
                 assert gradient is None
             else:
@@ -127,13 +139,14 @@ def assert_same_gradients(first, second, variables: list[tf.Variable]) -> None:
 
 
 def test_fingerprint_tells_graphs_apart(parameters):
-    a, b, P, Q, R, And, Or = (getattr(tables, name) for name in ("a", "b", "P", "Q", "R", "And", "Or"))
+    names = ("a", "b", "P", "Q", "R", "And", "Or")
+    a, b, P, Q, R, And, Or = (getattr(tables, name) for name in names)
     graph = lambda build: graph_of(lambda tape: [build().tensor])
     assert graph(lambda: P(a)) == graph(lambda: P(a))
-    assert graph(lambda: P(a)) != graph(lambda: P(b))                            # another constant
-    assert graph(lambda: P(a)) != graph(lambda: Q(a))                            # another predicate
-    assert graph(lambda: R([a, b])) != graph(lambda: R([b, a]))                  # another order
-    assert graph(lambda: And(P(a), Q(b))) != graph(lambda: Or(P(a), Q(b)))       # another connective
+    assert graph(lambda: P(a)) != graph(lambda: P(b))  # another constant
+    assert graph(lambda: P(a)) != graph(lambda: Q(a))  # another predicate
+    assert graph(lambda: R([a, b])) != graph(lambda: R([b, a]))  # another order
+    assert graph(lambda: And(P(a), Q(b))) != graph(lambda: Or(P(a), Q(b)))  # another connective
 
 
 # 1. Graph
@@ -142,7 +155,9 @@ def test_fingerprint_tells_graphs_apart(parameters):
 def test_graph_matches_core_definition(name, parameters, monkeypatch):
     program, core = tables.PROGRAMS[name]
     grounding = read(program)
-    assert graph_of(lambda tape: reader_column(grounding, tape)) == graph_of(lambda tape: core_column(core, program, tape, monkeypatch))
+    from_reader = graph_of(lambda tape: reader_column(grounding, tape))
+    from_core = graph_of(lambda tape: core_column(core, program, tape, monkeypatch))
+    assert from_reader == from_core
 
 
 def test_graph_with_function_terms(parameters):
@@ -186,10 +201,10 @@ def test_variables_carry_gradients_to_the_constants(parameters):
     assert all(tf.reduce_any(gradient != 0.) for gradient in (a, b, c))
 
 
-# ------------------------------------------------------------------------------------- A whole problem
+# ---------------------------------------------------------------------------------- A whole problem
 # Left: a problem. Right: the same problem with LTN core objects, starting from the same parameters.
-# It has every kind of symbol. Some are used in several statements, which must share their parameters,
-# and some have the same arity, which must not.
+# It has every kind of symbol. Some are used in several statements, which must share their
+# parameters, and some have the same arity, which must not.
 
 PROBLEM = """
     fof(fact, axiom, p(a)).
@@ -206,10 +221,13 @@ STEPS = 25
 
 
 def by_hand(grounding: Grounding):
-    """Returns the parameters of PROBLEM, in the order of grounding.trainable_variables, a function that
-    computes the satisfaction of its axioms, and a function that computes the query QUERY."""
+    """Returns the parameters of PROBLEM, in the order of grounding.trainable_variables, a function
+    that computes the satisfaction of its axioms, and a function that computes the query QUERY."""
     a, b, c = [ltn.Constant(grounding.constants[name].tensor, trainable=True) for name in "abc"]
-    s, t = [ltn.Proposition(float(grounding.propositions[name].tensor), trainable=True) for name in "st"]
+    s, t = [
+        ltn.Proposition(float(grounding.propositions[name].tensor), trainable=True)
+        for name in "st"
+    ]
     f, h = ltn.Function.MLP([SIZE], SIZE), ltn.Function.MLP([SIZE], SIZE)
     g = ltn.Function.MLP([SIZE, SIZE], SIZE)
     p, w = ltn.Predicate.MLP([SIZE]), ltn.Predicate.MLP([SIZE])
@@ -231,8 +249,10 @@ def by_hand(grounding: Grounding):
             Forall(x, Or(Not(q([x, x])), t)),
         ]).tensor
 
-    weights = [weight for symbol in (f, g, h, p, q, w) for weight in symbol.model.trainable_variables]
-    return [a.tensor, b.tensor, c.tensor, s.tensor, t.tensor, *weights], sat, lambda: q([a, b]).tensor
+    symbols = (f, g, h, p, q, w)
+    weights = [weight for symbol in symbols for weight in symbol.model.trainable_variables]
+    parameters = [a.tensor, b.tensor, c.tensor, s.tensor, t.tensor, *weights]
+    return parameters, sat, lambda: q([a, b]).tensor
 
 
 # 3. Groundings
@@ -244,7 +264,8 @@ def test_each_symbol_gets_one_grounding():
     assert sorted(grounding.functions) == ["f", "g", "h"]
     assert sorted(grounding.predicates) == ["=", "p", "q", "w"]
     assert all(isinstance(constant, ltn.Constant) for constant in grounding.constants.values())
-    assert all(isinstance(proposition, ltn.Proposition) for proposition in grounding.propositions.values())
+    propositions = grounding.propositions.values()
+    assert all(isinstance(proposition, ltn.Proposition) for proposition in propositions)
     assert all(isinstance(function, ltn.Function) for function in grounding.functions.values())
     assert all(isinstance(predicate, ltn.Predicate) for predicate in grounding.predicates.values())
 
@@ -252,8 +273,9 @@ def test_each_symbol_gets_one_grounding():
 def test_groundings_have_the_right_size():
     grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
     assert all(constant.tensor.shape == (SIZE,) for constant in grounding.constants.values())
-    assert [len(symbol.model.inputs) for symbol in (grounding.functions["f"], grounding.functions["g"])] == [1, 2]
-    assert [len(symbol.model.inputs) for symbol in (grounding.predicates["p"], grounding.predicates["q"])] == [1, 2]
+    functions, predicates = grounding.functions, grounding.predicates
+    assert [len(symbol.model.inputs) for symbol in (functions["f"], functions["g"])] == [1, 2]
+    assert [len(symbol.model.inputs) for symbol in (predicates["p"], predicates["q"])] == [1, 2]
     a, b = grounding.constants["a"], grounding.constants["b"]
     assert grounding.functions["g"]([a, b]).tensor.shape == (SIZE,)
     assert grounding.predicates["q"]([a, b]).tensor.shape == ()
@@ -265,7 +287,7 @@ def test_all_parameters_are_trainable_variables():
     parameters = grounding.trainable_variables
     assert all(parameter.trainable for parameter in parameters)
     assert len({id(parameter) for parameter in parameters}) == len(parameters)
-    assert [parameter.shape for parameter in parameters] == [parameter.shape for parameter in expected]
+    assert [parameter.shape for parameter in parameters] == [other.shape for other in expected]
 
 
 def test_extra_individuals_are_trainable_and_in_the_domain():
@@ -282,7 +304,8 @@ def test_equality_has_no_parameters():
 
 
 def test_equal_values_share_one_grounding():
-    grounding = Grounding(tptp.parse('fof(test, axiom, p(1/2) & p(0.5) & p(2) & p("2")).'), embedding_size=SIZE)
+    problem = tptp.parse('fof(test, axiom, p(1/2) & p(0.5) & p(2) & p("2")).')
+    grounding = Grounding(problem, embedding_size=SIZE)
     assert grounding.constants["1/2"] is grounding.constants["0.5"]
     assert grounding.domain == ["1/2", "2", '"2"']
     parameters = grounding.trainable_variables
@@ -299,7 +322,8 @@ def test_variables_need_individuals():
 # 4. Training
 
 def assert_same_parameters(grounding, expected_parameters, before):
-    for parameter, expected, start in zip(grounding.trainable_variables, expected_parameters, before, strict=True):
+    parameters = grounding.trainable_variables
+    for parameter, expected, start in zip(parameters, expected_parameters, before, strict=True):
         assert parameter.numpy() == pytest.approx(expected.numpy(), abs=1e-3)
         assert (parameter.numpy() != start).any()  # every parameter moved
 
@@ -330,7 +354,7 @@ def test_training_matches_the_hand_written_program():
             sat = expected_sat(tape)
             loss = 1. - sat
         gradients = tape.gradient(loss, expected_parameters)
-        optimizer.apply_gradients(zip(gradients, expected_parameters))
+        optimizer.apply_gradients(zip(gradients, expected_parameters, strict=True))
         return sat
 
     for _ in range(STEPS):
@@ -353,13 +377,14 @@ def test_refutation_matches_the_hand_written_program():
             truth = query()
             loss = truth + tf.keras.activations.elu(10. * (0.95 - sat), alpha=0.05)
         gradients = tape.gradient(loss, expected_parameters)
-        optimizer.apply_gradients(zip(gradients, expected_parameters))
+        optimizer.apply_gradients(zip(gradients, expected_parameters, strict=True))
         return sat, truth
 
     for _ in range(STEPS):
         sat, truth = step()
 
-    assert grounding.refute(QUERY, steps=STEPS) == pytest.approx((float(sat), float(truth)), abs=1e-4)
+    expected = pytest.approx((float(sat), float(truth)), abs=1e-4)
+    assert grounding.refute(QUERY, steps=STEPS) == expected
     assert_same_parameters(grounding, expected_parameters, before)
 
 
@@ -403,8 +428,8 @@ def seeded_grounding() -> Grounding:
 
 
 def same_parameters(first: Grounding, second: Grounding) -> bool:
-    return all(parameter.numpy() == pytest.approx(other.numpy(), abs=1e-6)
-               for parameter, other in zip(first.trainable_variables, second.trainable_variables, strict=True))
+    pairs = zip(first.trainable_variables, second.trainable_variables, strict=True)
+    return all(mine.numpy() == pytest.approx(other.numpy(), abs=1e-6) for mine, other in pairs)
 
 
 def count_traces(grounding: Grounding) -> list:

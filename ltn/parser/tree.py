@@ -1,10 +1,19 @@
-"""The syntax tree. Every syntax reads text into this tree, and `Grounding` turns it into LTN objects."""
+"""The syntax tree, which every syntax reads text into, and `Grounding` turns into LTN objects."""
 from __future__ import annotations
 
 import dataclasses
-from typing import Callable
+from collections.abc import Callable
 
-AXIOM_ROLES = ("axiom", "hypothesis", "definition", "assumption", "lemma", "theorem", "corollary", "plain")
+AXIOM_ROLES = (
+    "axiom",
+    "hypothesis",
+    "definition",
+    "assumption",
+    "lemma",
+    "theorem",
+    "corollary",
+    "plain",
+)
 CONJECTURE_ROLES = ("conjecture", "negated_conjecture")
 
 
@@ -98,10 +107,10 @@ class Problem:
 
     def _collect(self, f) -> None:
         if isinstance(f, (Atom, Fn)):
-            table, name = (self.predicates, f.pred) if isinstance(f, Atom) else (self.functions, f.name)
-            if name != "=":
-                if table.setdefault(name, len(f.args)) != len(f.args):
-                    raise NotImplementedError(f"Symbol {name} is used with different arities.")
+            table = self.predicates if isinstance(f, Atom) else self.functions
+            name = f.pred if isinstance(f, Atom) else f.name
+            if name != "=" and table.setdefault(name, len(f.args)) != len(f.args):
+                raise NotImplementedError(f"Symbol {name} is used with different arities.")
             for arg in f.args:
                 self._collect(arg)
         elif isinstance(f, Not):
