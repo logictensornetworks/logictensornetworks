@@ -1,4 +1,5 @@
 """The syntax tree, which every syntax reads text into, and `Grounding` turns into LTN objects."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -21,25 +22,32 @@ CONJECTURE_ROLES = ("conjecture", "negated_conjecture")
 class Var:
     name: str
 
+
 @dataclasses.dataclass(frozen=True)
 class Fn:
     """Function term. A constant is a function without arguments."""
+
     name: str
     args: tuple = ()
+
 
 @dataclasses.dataclass(frozen=True)
 class Atom:
     """Predicate atom. Equality is the predicate "="."""
+
     pred: str
     args: tuple = ()
+
 
 @dataclasses.dataclass(frozen=True)
 class Truth:
     value: bool
 
+
 @dataclasses.dataclass(frozen=True)
 class Not:
     arg: object
+
 
 @dataclasses.dataclass(frozen=True)
 class BinOp:
@@ -47,11 +55,14 @@ class BinOp:
     left: object
     right: object
 
+
 @dataclasses.dataclass(frozen=True)
 class Chain:
     """Two or more operands of & or |, which group to the left."""
+
     op: str  # "&" or "|"
     args: tuple
+
 
 @dataclasses.dataclass(frozen=True)
 class Quant:
@@ -59,11 +70,14 @@ class Quant:
     vars: tuple
     body: object
 
+
 @dataclasses.dataclass(frozen=True)
 class Refused:
     """A part of a formula that the reader refuses. Raising only when the formula of a statement
     is checked means that the same thing in an annotation, which has no effect, is not refused."""
+
     error: Exception
+
 
 @dataclasses.dataclass(frozen=True)
 class Statement:
@@ -95,6 +109,7 @@ class Problem:
     `values` holds the constants that a syntax interprets as themselves, such as TPTP's numbers and
     distinct objects. Two of them are the same individual if their values are equal, and different
     individuals otherwise. The syntax fills it in."""
+
     statements: list[Statement]
     parse_formula: Callable[[str], object]
     predicates: dict[str, int] = dataclasses.field(default_factory=dict)

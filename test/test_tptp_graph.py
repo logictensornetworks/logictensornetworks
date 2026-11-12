@@ -16,6 +16,7 @@ to review is the pair PROBLEM and by_hand(), under "A whole problem".
 
 The last section tests `train(reuse_graph=True)`, which keeps the graph between calls.
 """
+
 import hashlib
 
 import pytest
@@ -30,8 +31,15 @@ from . import test_tptp as tables
 
 # ------------------------------------------------------------------------------ Trainable grounding
 
-CONSTANTS = {"a": "a", "b": "b", "c": "c", "'not a word'": "word", "123": "number",
-             "'123'": "quoted_number", '"a"': "distinct"}
+CONSTANTS = {
+    "a": "a",
+    "b": "b",
+    "c": "c",
+    "'not a word'": "word",
+    "123": "number",
+    "'123'": "quoted_number",
+    '"a"': "distinct",
+}
 
 
 @pytest.fixture
@@ -82,6 +90,7 @@ def core_column(core, program: str, tape: tf.GradientTape, monkeypatch) -> list[
 
 # --------------------------------------------------------------------------------------- Comparing
 
+
 def fingerprint(graph: tf.Graph) -> list[str]:
     """One hash per output of `graph`. It depends on the operations that compute the output and on
     how they are connected, not on their names or on the order they were created in. Constants
@@ -115,9 +124,11 @@ def fingerprint(graph: tf.Graph) -> list[str]:
 
 def graph_of(build) -> list[str]:
     """The fingerprint of the graph of `build(tape)`, which returns a list of tensors."""
+
     def traced():
         with tf.GradientTape() as tape:
             return build(tape)
+
     return fingerprint(tf.function(traced).get_concrete_function().graph)
 
 
@@ -151,6 +162,7 @@ def test_fingerprint_tells_graphs_apart(parameters):
 
 # 1. Graph
 
+
 @pytest.mark.parametrize("name", tables.PROGRAMS)
 def test_graph_matches_core_definition(name, parameters, monkeypatch):
     program, core = tables.PROGRAMS[name]
@@ -173,12 +185,16 @@ def test_graph_with_function_terms(parameters):
 
 # 2. Gradients
 
+
 @pytest.mark.parametrize("name", tables.PROGRAMS)
 def test_gradients_match_core_definition(name, parameters, monkeypatch):
     program, core = tables.PROGRAMS[name]
     grounding = read(program)
-    assert_same_gradients(lambda tape: reader_column(grounding, tape),
-                          lambda tape: core_column(core, program, tape, monkeypatch), parameters)
+    assert_same_gradients(
+        lambda tape: reader_column(grounding, tape),
+        lambda tape: core_column(core, program, tape, monkeypatch),
+        parameters,
+    )
 
 
 def test_gradients_with_function_terms(parameters):
@@ -198,7 +214,7 @@ def test_variables_carry_gradients_to_the_constants(parameters):
         truth = grounding.evaluate(grounding.problem.statements[0].formula, tape=tape).tensor
     a, b, c = tape.gradient(truth, parameters[:3])
     assert a is not None and b is not None and c is not None
-    assert all(tf.reduce_any(gradient != 0.) for gradient in (a, b, c))
+    assert all(tf.reduce_any(gradient != 0.0) for gradient in (a, b, c))
 
 
 # ---------------------------------------------------------------------------------- A whole problem
@@ -225,8 +241,7 @@ def by_hand(grounding: Grounding):
     that computes the satisfaction of its axioms, and a function that computes the query QUERY."""
     a, b, c = [ltn.Constant(grounding.constants[name].tensor, trainable=True) for name in "abc"]
     s, t = [
-        ltn.Proposition(float(grounding.propositions[name].tensor), trainable=True)
-        for name in "st"
+        ltn.Proposition(float(grounding.propositions[name].tensor), trainable=True) for name in "st"
     ]
     f, h = ltn.Function.MLP([SIZE], SIZE), ltn.Function.MLP([SIZE], SIZE)
     g = ltn.Function.MLP([SIZE, SIZE], SIZE)
@@ -240,14 +255,16 @@ def by_hand(grounding: Grounding):
 
     def sat(tape):
         x = ltn.Variable.from_constants("X", [a, b, c], tape=tape)
-        return tables.SatAgg([
-            p(a),
-            Forall(x, Implies(p(x), q([f(x), b]))),
-            Implies(s, p(b)),
-            Not(Eq([a, g([a, b])])),
-            w(h(b)),
-            Forall(x, Or(Not(q([x, x])), t)),
-        ]).tensor
+        return tables.SatAgg(
+            [
+                p(a),
+                Forall(x, Implies(p(x), q([f(x), b]))),
+                Implies(s, p(b)),
+                Not(Eq([a, g([a, b])])),
+                w(h(b)),
+                Forall(x, Or(Not(q([x, x])), t)),
+            ]
+        ).tensor
 
     symbols = (f, g, h, p, q, w)
     weights = [weight for symbol in symbols for weight in symbol.model.trainable_variables]
@@ -256,6 +273,7 @@ def by_hand(grounding: Grounding):
 
 
 # 3. Groundings
+
 
 def test_each_symbol_gets_one_grounding():
     grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
@@ -316,10 +334,11 @@ def test_variables_need_individuals():
     problem = tptp.parse("fof(test, axiom, ! [X] : p(X)).")
     with pytest.raises(ValueError, match="extra_individuals"):
         Grounding(problem).sat()
-    assert 0. < float(Grounding(problem, extra_individuals=1).sat()) < 1.
+    assert 0.0 < float(Grounding(problem, extra_individuals=1).sat()) < 1.0
 
 
 # 4. Training
+
 
 def assert_same_parameters(grounding, expected_parameters, before):
     parameters = grounding.trainable_variables
@@ -352,7 +371,7 @@ def test_training_matches_the_hand_written_program():
     def step():
         with tf.GradientTape() as tape:
             sat = expected_sat(tape)
-            loss = 1. - sat
+            loss = 1.0 - sat
         gradients = tape.gradient(loss, expected_parameters)
         optimizer.apply_gradients(zip(gradients, expected_parameters, strict=True))
         return sat
@@ -375,7 +394,7 @@ def test_refutation_matches_the_hand_written_program():
         with tf.GradientTape() as tape:
             sat = expected_sat(tape)
             truth = query()
-            loss = truth + tf.keras.activations.elu(10. * (0.95 - sat), alpha=0.05)
+            loss = truth + tf.keras.activations.elu(10.0 * (0.95 - sat), alpha=0.05)
         gradients = tape.gradient(loss, expected_parameters)
         optimizer.apply_gradients(zip(gradients, expected_parameters, strict=True))
         return sat, truth
@@ -391,9 +410,11 @@ def test_refutation_matches_the_hand_written_program():
 def test_training_without_axioms_changes_nothing():
     grounding = Grounding(tptp.parse("fof(test, conjecture, p(a))."), embedding_size=SIZE)
     before = [parameter.numpy().copy() for parameter in grounding.trainable_variables]
-    assert grounding.train(2) == 1.
-    assert all((parameter.numpy() == start).all()
-               for parameter, start in zip(grounding.trainable_variables, before, strict=True))
+    assert grounding.train(2) == 1.0
+    assert all(
+        (parameter.numpy() == start).all()
+        for parameter, start in zip(grounding.trainable_variables, before, strict=True)
+    )
 
 
 def test_training_on_chosen_statements_is_training_on_them_as_axioms():
@@ -413,7 +434,7 @@ def test_training_on_chosen_statements_is_training_on_them_as_axioms():
 def test_propositions_stay_truth_values_during_training():
     grounding = Grounding(tptp.parse("fof(test, axiom, s)."))
     grounding.train(200)
-    assert 0. <= float(grounding.propositions["s"].tensor) <= 1.
+    assert 0.0 <= float(grounding.propositions["s"].tensor) <= 1.0
 
 
 # ------------------------------------------------------------------ Keeping the graph between calls
@@ -513,8 +534,10 @@ def test_failed_call_keeps_no_graph():
     grounding.predicates["p"] = predicate  # a kept step would still train the parameters without it
     before = [weight.numpy().copy() for weight in predicate.model.trainable_variables]
     grounding.train(1, reuse_graph=True)
-    assert all((weight.numpy() != start).any()
-               for weight, start in zip(predicate.model.trainable_variables, before, strict=True))
+    assert all(
+        (weight.numpy() != start).any()
+        for weight, start in zip(predicate.model.trainable_variables, before, strict=True)
+    )
 
 
 def test_kept_graph_sees_an_assign_to_a_constant():
@@ -526,7 +549,7 @@ def test_kept_graph_sees_an_assign_to_a_constant():
     assert grounding.train(1, reuse_graph=True) < 0.1
     built = len(traces)
     a.assign(b)
-    assert grounding.train(1, reuse_graph=True) == pytest.approx(1., abs=1e-3)
+    assert grounding.train(1, reuse_graph=True) == pytest.approx(1.0, abs=1e-3)
     assert len(traces) == built
 
 
@@ -536,7 +559,7 @@ def test_kept_graph_does_not_see_a_new_predicate():
     grounding.train(1, reuse_graph=True)
     old_sat = float(grounding.sat())
     grounding.predicates["p"] = ltn.Predicate.Lambda(lambda x: tf.ones_like(x[:, 0]))
-    assert float(grounding.sat()) == pytest.approx(1., abs=1e-3)
+    assert float(grounding.sat()) == pytest.approx(1.0, abs=1e-3)
     assert grounding.train(1, reuse_graph=True) == pytest.approx(old_sat, abs=1e-6)
 
 

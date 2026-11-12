@@ -4,6 +4,7 @@ Formulas are parsed once into a syntax tree. Every call to `Grounding.sat()` eva
 again, so the LTN variables built from trainable constants are created while the caller's
 GradientTape is recording.
 """
+
 from __future__ import annotations
 
 import functools
@@ -33,7 +34,8 @@ def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
     """exp(-alpha * squared distance). Unlike exp(-alpha * distance), its gradient is
     defined when both arguments are equal."""
     return ltn.Predicate.Lambda(
-        lambda args: tf.exp(-alpha * tf.reduce_sum(tf.square(args[0] - args[1]), axis=1)))
+        lambda args: tf.exp(-alpha * tf.reduce_sum(tf.square(args[0] - args[1]), axis=1))
+    )
 
 
 class Grounding:
@@ -47,8 +49,13 @@ class Grounding:
     between two of them is true or false according to their values, and `sat` includes the
     implicit axiom that different values are unequal."""
 
-    def __init__(self, problem: Problem, embedding_size: int = 8, extra_individuals: int = 0,
-                 herbrand_depth: int = 0) -> None:
+    def __init__(
+        self,
+        problem: Problem,
+        embedding_size: int = 8,
+        extra_individuals: int = 0,
+        herbrand_depth: int = 0,
+    ) -> None:
         self.problem = problem
         self.herbrand_depth = herbrand_depth
         d = embedding_size
@@ -71,15 +78,17 @@ class Grounding:
             p: ltn.Predicate.MLP([d] * n) for p, n in problem.predicates.items() if n > 0
         }
         self.predicates["="] = smooth_equality()
-        self.propositions = {p: ltn.Proposition(0.5, trainable=True)
-                             for p, n in problem.predicates.items() if n == 0}
+        self.propositions = {
+            p: ltn.Proposition(0.5, trainable=True) for p, n in problem.predicates.items() if n == 0
+        }
         self.Not = ltn.Wrapper_Connective(ltn.fuzzy_ops.Not_Std())
         self.connectives = {
             "&": ltn.Wrapper_Connective(ltn.fuzzy_ops.And_Prod()),
             "|": ltn.Wrapper_Connective(ltn.fuzzy_ops.Or_ProbSum()),
             "=>": ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach()),
-            "<=>": ltn.Wrapper_Connective(ltn.fuzzy_ops.Equiv(
-                ltn.fuzzy_ops.And_Prod(), ltn.fuzzy_ops.Implies_Reichenbach())),
+            "<=>": ltn.Wrapper_Connective(
+                ltn.fuzzy_ops.Equiv(ltn.fuzzy_ops.And_Prod(), ltn.fuzzy_ops.Implies_Reichenbach())
+            ),
         }
         self.quantifiers = {
             "!": ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2), semantics="forall"),
@@ -109,8 +118,12 @@ class Grounding:
             terms.update(new)
         return list(terms.values())
 
-    def evaluate(self, formula, tape: tf.GradientTape | None = None,
-                 individuals: list[ltn.core.Term] | None = None) -> ltn.core.Formula:
+    def evaluate(
+        self,
+        formula,
+        tape: tf.GradientTape | None = None,
+        individuals: list[ltn.core.Term] | None = None,
+    ) -> ltn.core.Formula:
         """Builds the LTN formula. Call it inside the tape when training."""
         if isinstance(formula, str):
             formula = self.problem.parse_formula(formula)
@@ -138,11 +151,16 @@ class Grounding:
         if distinct is not None:
             formulas.append(distinct)
         if not formulas:
-            return tf.constant(1.)
+            return tf.constant(1.0)
         return self.aggregator(formulas).tensor
 
-    def train(self, steps: int, optimizer: tf.keras.optimizers.Optimizer | None = None,
-              reuse_graph: bool = False, statements: list[Statement] | None = None) -> float:
+    def train(
+        self,
+        steps: int,
+        optimizer: tf.keras.optimizers.Optimizer | None = None,
+        reuse_graph: bool = False,
+        statements: list[Statement] | None = None,
+    ) -> float:
         """Maximizes the satisfaction of `statements`, by default the axioms, as `sat` computes it.
         Returns the last satisfaction. A CNF problem usually puts its conjecture in
         negated_conjecture clauses, which are not axioms: to train on them too, pass
@@ -179,7 +197,7 @@ class Grounding:
         def step():
             with tf.GradientTape() as tape:
                 sat = self.sat(statements, tape=tape)
-                loss = 1. - sat
+                loss = 1.0 - sat
             grads = tape.gradient(loss, params)
             pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
             if pairs:  # without axioms, for example, there is nothing to train
@@ -244,7 +262,7 @@ class Grounding:
         values = tf.stack([self.constants[name].tensor for name in names])
         pairs = [tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]
         equal = tf.reshape(self.predicates["="].model(pairs), [k, k])
-        unequal = tf.boolean_mask(1. - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
+        unequal = tf.boolean_mask(1.0 - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
         return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
 
     def _variable(
@@ -296,13 +314,13 @@ class Grounding:
                     for a in f.args
                 ]
                 if None not in values:  # both are interpreted as themselves
-                    return ltn.Proposition(1. if values[0] == values[1] else 0., trainable=False)
+                    return ltn.Proposition(1.0 if values[0] == values[1] else 0.0, trainable=False)
             else:
                 arity = len(f.args)
                 self._check(self.predicates, self.problem.predicates, f.pred, arity, "predicate")
             return self._apply(self.predicates[f.pred], [recurse(a) for a in f.args])
         if isinstance(f, Truth):
-            return ltn.Proposition(1. if f.value else 0., trainable=False)
+            return ltn.Proposition(1.0 if f.value else 0.0, trainable=False)
         if isinstance(f, Not):
             return self.Not(recurse(f.arg))
         if isinstance(f, BinOp):

@@ -2,6 +2,7 @@
 
 `parse` reads text, and `parse_file` reads a file together with the files it includes.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -51,6 +52,7 @@ _NONASSOC_CONNECTIVES = {
 @dataclasses.dataclass(frozen=True)
 class Include:
     """An include directive. `names` is None to include every statement of the file."""
+
     file: str
     names: tuple | None
     line: int
@@ -203,8 +205,10 @@ def _guarded(action):
     try:
         return action()
     except RecursionError:
-        raise NotImplementedError(f"A formula is nested too deeply for Python's recursion limit "
-                                  f"({sys.getrecursionlimit()}).") from None
+        raise NotImplementedError(
+            f"A formula is nested too deeply for Python's recursion limit "
+            f"({sys.getrecursionlimit()})."
+        ) from None
 
 
 def _value(name: str):
@@ -233,8 +237,10 @@ def parse(text: str) -> Problem:
     items = _guarded(lambda: _read(text, "tptp_file"))
     for item in items:
         if isinstance(item, Include):
-            raise NotImplementedError(f"include(...) at line {item.line} needs the file it names: "
-                                      f"read the problem with tptp.parse_file.")
+            raise NotImplementedError(
+                f"include(...) at line {item.line} needs the file it names: "
+                f"read the problem with tptp.parse_file."
+            )
     return _guarded(lambda: _problem(items))
 
 

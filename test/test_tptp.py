@@ -19,6 +19,7 @@ test_tptp_graph.py uses the same tables to test the LTN graph that the reader bu
 
 Section 3 tests `tptp.parse_file`, which reads a file together with the files it includes.
 """
+
 import functools
 import subprocess
 import sys
@@ -45,26 +46,26 @@ a, b, c = [ltn.Constant(point, trainable=False) for point in points]
 x, y, z = [ltn.Variable(label, points) for label in ("x", "y", "z")]
 
 # Constants that only appear in the lines about names.
-word = ltn.Constant([0.2, 0.4], trainable=False)           # 'not a word'
-number = ltn.Constant([0.5, 0.7], trainable=False)         # 123
+word = ltn.Constant([0.2, 0.4], trainable=False)  # 'not a word'
+number = ltn.Constant([0.5, 0.7], trainable=False)  # 123
 quoted_number = ltn.Constant([0.7, 0.9], trainable=False)  # '123'
-distinct = ltn.Constant([0.8, 0.1], trainable=False)       # "a"
+distinct = ltn.Constant([0.8, 0.1], trainable=False)  # "a"
 
 # Propositions and truth constants.
 S = ltn.Proposition(0.7, trainable=False)
 T = ltn.Proposition(0.2, trainable=False)
-TRUE = ltn.Proposition(1., trainable=False)
-FALSE = ltn.Proposition(0., trainable=False)
+TRUE = ltn.Proposition(1.0, trainable=False)
+FALSE = ltn.Proposition(0.0, trainable=False)
 
 # Predicates and functions. They are hand-written rather than trained, so nothing here is random,
 # and each one depends on the order of its arguments.
-P = ltn.Predicate.Lambda(lambda u: tf.sigmoid(3. * u[:, 0] - 2. * u[:, 1]))
-Q = ltn.Predicate.Lambda(lambda u: tf.sigmoid(2. * u[:, 1] - u[:, 0]))
-R = ltn.Predicate.Lambda(lambda args: tf.sigmoid(3. * args[0][:, 0] - 2. * args[1][:, 1]))
+P = ltn.Predicate.Lambda(lambda u: tf.sigmoid(3.0 * u[:, 0] - 2.0 * u[:, 1]))
+Q = ltn.Predicate.Lambda(lambda u: tf.sigmoid(2.0 * u[:, 1] - u[:, 0]))
+R = ltn.Predicate.Lambda(lambda args: tf.sigmoid(3.0 * args[0][:, 0] - 2.0 * args[1][:, 1]))
 W = ltn.Predicate.Lambda(
     lambda args: tf.sigmoid(args[0][:, 0] + args[1][:, 1] - 2.0 * args[2][:, 0])
 )
-F = ltn.Function.Lambda(lambda u: tf.stack([1. - u[:, 1], u[:, 0]], axis=1))
+F = ltn.Function.Lambda(lambda u: tf.stack([1.0 - u[:, 1], u[:, 0]], axis=1))
 G = ltn.Function.Lambda(lambda args: args[0] - 0.5 * args[1])
 
 # Equality, connectives, quantifiers and the aggregation of axioms. These are the reader's default
@@ -295,16 +296,16 @@ def smokes_friends_cancer():
     p, q = x, y
     axioms = []
     # friendship is anti-reflexive
-    axioms.append(Forall(p,Not(Friends([p,p]))))
+    axioms.append(Forall(p, Not(Friends([p, p]))))
     # friendship is symmetric
-    axioms.append(Forall((p,q),Implies(Friends([p,q]),Friends([q,p]))))
+    axioms.append(Forall((p, q), Implies(Friends([p, q]), Friends([q, p]))))
     # everyone has a friend
-    axioms.append(Forall(p,Exists(q,Friends([p,q]))))
+    axioms.append(Forall(p, Exists(q, Friends([p, q]))))
     # smoking propagates among friends
-    axioms.append(Forall((p,q),Implies(And(Friends([p,q]),Smokes(p)),Smokes(q))))
+    axioms.append(Forall((p, q), Implies(And(Friends([p, q]), Smokes(p)), Smokes(q))))
     # smoking causes cancer + not smoking causes not cancer
-    axioms.append(Forall(p,Implies(Smokes(p),Cancer(p))))
-    axioms.append(Forall(p,Implies(Not(Smokes(p)),Not(Cancer(p)))))
+    axioms.append(Forall(p, Implies(Smokes(p), Cancer(p))))
+    axioms.append(Forall(p, Implies(Not(Smokes(p)), Not(Cancer(p)))))
     return axioms
 
 
@@ -387,17 +388,19 @@ KNOWLEDGE_BASE = """
 
 
 def knowledge_base():
-    return SatAgg([
-        P(a),
-        Forall(x, Implies(P(x), Q(x))),
-        Forall(x, Equiv(Q(x), R([x, x]))),
-        S,
-        P(b),
-        Q(b),
-        P(c),
-        Q(c),
-        Forall(x, Or(Not(P(x)), Q(x))),
-    ])
+    return SatAgg(
+        [
+            P(a),
+            Forall(x, Implies(P(x), Q(x))),
+            Forall(x, Equiv(Q(x), R([x, x]))),
+            S,
+            P(b),
+            Q(b),
+            P(c),
+            Q(c),
+            Forall(x, Or(Not(P(x)), Q(x))),
+        ]
+    )
 
 
 # Valid programs that only need to parse.
@@ -642,6 +645,7 @@ NOT_SUPPORTED = [
 
 # ------------------------------------------------------------------------------- The tests
 
+
 def programs():
     for formula, core in FORMULAS:
         program = f"fof(test, axiom, {formula})."
@@ -671,6 +675,7 @@ def values_of(*formulas):
 
 # 1. Syntax
 
+
 @pytest.mark.parametrize("name", PROGRAMS)
 def test_syntax_program_parses(name):
     program, _ = PROGRAMS[name]
@@ -682,15 +687,19 @@ def test_syntax_valid_program_parses(program):
     tptp.parse(program)
 
 
-@pytest.mark.parametrize("program", [program for program, _ in NOT_TPTP],
-                         ids=[reason for _, reason in NOT_TPTP])
+@pytest.mark.parametrize(
+    "program", [program for program, _ in NOT_TPTP], ids=[reason for _, reason in NOT_TPTP]
+)
 def test_syntax_invalid_program_is_rejected(program):
     with pytest.raises(SyntaxError):
         tptp.parse(program)
 
 
-@pytest.mark.parametrize("program", [program for program, _ in NOT_SUPPORTED],
-                         ids=[reason for _, reason in NOT_SUPPORTED])
+@pytest.mark.parametrize(
+    "program",
+    [program for program, _ in NOT_SUPPORTED],
+    ids=[reason for _, reason in NOT_SUPPORTED],
+)
 def test_syntax_unsupported_program_is_rejected(program):
     with pytest.raises(NotImplementedError):
         tptp.parse(program)
@@ -710,11 +719,15 @@ def test_syntax_long_chains_parse():
     tptp.parse("cnf(test, axiom, " + " | ".join(["p(X)"] * 10000) + ").")
 
 
-@pytest.mark.parametrize("program", [
-    "fof(test, axiom, p(" + "f(" * 5000 + "a" + ")" * 5000 + ")).",
-    "fof(test, axiom, " + "~ " * 5000 + "p(a)).",
-    "fof(test, axiom, " + "( p(a) & " * 5000 + "p(b)" + " )" * 5000 + ").",
-], ids=["function terms", "negations", "conjunctions"])
+@pytest.mark.parametrize(
+    "program",
+    [
+        "fof(test, axiom, p(" + "f(" * 5000 + "a" + ")" * 5000 + ")).",
+        "fof(test, axiom, " + "~ " * 5000 + "p(a)).",
+        "fof(test, axiom, " + "( p(a) & " * 5000 + "p(b)" + " )" * 5000 + ").",
+    ],
+    ids=["function terms", "negations", "conjunctions"],
+)
 def test_syntax_deep_nesting_is_refused(program):
     with pytest.raises(NotImplementedError, match="nested too deeply"):
         tptp.parse(program)
@@ -726,6 +739,7 @@ def test_syntax_include_needs_parse_file():
 
 
 # 2. Values
+
 
 @pytest.mark.parametrize("name", PROGRAMS)
 def test_value_matches_core_definition(name):
@@ -744,14 +758,17 @@ def test_value_of_a_query():
     assert [float(grounding.evaluate("p(b) | r(b, a)").tensor)] == values_of(Or(P(b), R([b, a])))
 
 
-@pytest.mark.parametrize("query, message", [
-    ("z(a)", "z is not a predicate"),
-    ("p(zz)", "zz is not a constant"),
-    ("zz", "zz is not a proposition"),
-    ("p(h(a))", "h is not a function"),
-    ("p(a, a)", "takes 1 argument, not 2"),
-    ("p(f(a, a))", "takes 1 argument, not 2"),
-])
+@pytest.mark.parametrize(
+    "query, message",
+    [
+        ("z(a)", "z is not a predicate"),
+        ("p(zz)", "zz is not a constant"),
+        ("zz", "zz is not a proposition"),
+        ("p(h(a))", "h is not a function"),
+        ("p(a, a)", "takes 1 argument, not 2"),
+        ("p(f(a, a))", "takes 1 argument, not 2"),
+    ],
+)
 def test_query_with_a_symbol_the_problem_lacks_is_rejected(query, message):
     grounding = read("fof(test, axiom, p(f(a))).")
     with pytest.raises(ValueError, match=message):
@@ -780,6 +797,7 @@ def test_value_of_a_long_chain():
 
 # With herbrand_depth=n, variables also range over function terms up to depth n.
 
+
 def ranging_over(*individuals) -> ltn.Variable:
     return ltn.Variable("u", tf.stack(ltn.as_tensors(individuals)))
 
@@ -804,6 +822,7 @@ def test_value_with_a_binary_function_term():
 
 # 3. Files. tptp.parse_file reads a file and puts the statements of each included file in place of
 # its include, as if they were pasted there.
+
 
 def write(folder, name: str, text: str):
     path = folder / name
@@ -832,11 +851,14 @@ def test_file_gets_the_included_statements_in_place(library):
     assert tptp.parse_file(path, root=library) == tptp.parse(pasted)
 
 
-@pytest.mark.parametrize("selection, pasted", [
-    ("[a2]", "fof(a2, axiom, q(a))."),
-    ("['a2', a1]", "fof(a1, axiom, p(a)). fof(a2, axiom, q(a))."),  # in the order of the file
-    ("*", "fof(b1, axiom, s). fof(a1, axiom, p(a)). fof(a2, axiom, q(a))."),
-])
+@pytest.mark.parametrize(
+    "selection, pasted",
+    [
+        ("[a2]", "fof(a2, axiom, q(a))."),
+        ("['a2', a1]", "fof(a1, axiom, p(a)). fof(a2, axiom, q(a))."),  # in the order of the file
+        ("*", "fof(b1, axiom, s). fof(a1, axiom, p(a)). fof(a2, axiom, q(a))."),
+    ],
+)
 def test_include_selects_statements_by_name(library, selection, pasted):
     path = write(library, "Problems/P.p", f"include('Axioms/A.ax', {selection}).\n")
     assert tptp.parse_file(path, root=library) == tptp.parse(pasted)
@@ -880,8 +902,10 @@ def test_selected_name_must_be_in_the_file(library):
         tptp.parse_file(path, root=library)
 
 
-@pytest.mark.parametrize("text, error", [("fof(b1, axiom, p(a) &).", SyntaxError),
-                                         ("tff(b1, axiom, p).", NotImplementedError)])
+@pytest.mark.parametrize(
+    "text, error",
+    [("fof(b1, axiom, p(a) &).", SyntaxError), ("tff(b1, axiom, p).", NotImplementedError)],
+)
 def test_error_in_an_included_file_names_the_file(library, text, error):
     write(library, "Axioms/B.ax", text)
     path = write(library, "Problems/P.p", "include('Axioms/A.ax').\n")
@@ -890,6 +914,7 @@ def test_error_in_an_included_file_names_the_file(library, text, error):
 
 
 # The parser is optional.
+
 
 def test_ltn_works_without_lark():
     code = (
