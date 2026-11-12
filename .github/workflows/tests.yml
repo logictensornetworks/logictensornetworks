@@ -14,7 +14,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only cancel outdated PR runs. On master, cancel-in-progress turns a
+  # still-queued macOS job into a cancelled check, and GitHub rolls that up as
+  # a failed commit status (even when every test that ran had passed).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
