@@ -87,7 +87,7 @@ class TestFromLogits(unittest.TestCase):
 
                 @tf.function
                 def truth_values():
-                    return P([self.x, self.l]).tensor  # noqa: B023 (called right away)
+                    return P([self.x, self.l]).tensor
 
                 self.assertTrue(array_allclose(truth_values(), P([self.x, self.l]).tensor))
 

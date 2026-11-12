@@ -68,3 +68,4 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Imports there re-export the public API
+"test/*" = ["B023"]  # Tests define closures in loops and call them in the same iteration

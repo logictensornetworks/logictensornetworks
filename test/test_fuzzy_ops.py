@@ -385,7 +385,7 @@ class TestStableGradients(unittest.TestCase):
         for op in [fuzzy_ops.Aggreg_pMean(p=2), fuzzy_ops.Aggreg_pMeanError(p=2), log_prod]:
             for xs in [ZEROS, ONES]:
                 with self.subTest(op=name(op), xs=float(xs[0])):
-                    self.assert_finite_gradients(lambda x: op(x * xs), 1)  # noqa: B023 (called right away)
+                    self.assert_finite_gradients(lambda x: op(x * xs), 1)
 
     def test_unstable_aggregators_are_not_finite(self):
         """Sanity check that the boundaries above do exercise the instability."""
