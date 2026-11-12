@@ -13,7 +13,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-dynamic = ["dependencies", "optional-dependencies"]
+dependencies = [
+    "numpy",
+    # tensorflow ships Apple Silicon wheels since 2.13; tensorflow-macos is discontinued
+    "tensorflow>=2.15",
+]
 keywords=["machine-learning","framework","neural-symbolic-computing","fuzzy-logic","tensorflow"]
 classifiers=[
     "Development Status :: 5 - Production/Stable",
@@ -28,13 +32,39 @@ classifiers=[
 "Homepage" = "https://github.com/logictensornetworks/logictensornetworks"
 "Issue Tracker" = "https://github.com/logictensornetworks/logictensornetworks/issues"
 
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
-optional-dependencies.examples = {file = ["requirements-examples.txt"]}
-optional-dependencies.parser = {file = ["requirements-parser.txt"]}
+[project.optional-dependencies]
+examples = [
+    "matplotlib",
+    "networkx",
+    "pandas",
+    "seaborn",
+]
+parser = [
+    "lark>=1.3.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff>=0.17.4",
+]
 
 [tool.setuptools.packages.find]
-include = ["ltn*"]
+include = ["ltn*"]  # ltn and its subpackages, such as ltn.parser
 
 [tool.setuptools.package-data]
 "ltn.parser" = ["*.lark"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["examples", "tutorials"]  # Scratch code and notebooks
+
+[tool.ruff.lint]
+# A small rule set on purpose: pycodestyle, pyflakes, import order, pyupgrade, bugbear, simplify
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "E731",  # Allow lambda assignments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Imports there re-export the public API

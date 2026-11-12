@@ -17,6 +17,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v5
+    - uses: astral-sh/setup-uv@v10.3.3
+      with:
+        enable-cache: true
+    # Only the dev group (pytest, ruff), pinned by uv.lock: no need for TensorFlow to lint.
+    - name: Install ruff
+      run: uv sync --locked --only-dev
+    - name: Lint
+      run: uv run --no-sync ruff check .
+    - name: Format
+      run: uv run --no-sync ruff format --check .
+
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -44,21 +60,22 @@ jobs:
     name: python ${{ matrix.python-version }}, tensorflow ${{ matrix.tensorflow }}${{ matrix.os != 'ubuntu-latest' && format(', {0}', matrix.os) || '' }}
     steps:
     - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6
+    # setup-uv publishes no moving major tag (like v10) since v8: pin the exact version
+    - uses: astral-sh/setup-uv@v10.3.3
       with:
         python-version: ${{ matrix.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          requirements.txt
-          requirements-parser.txt
-          pyproject.toml
+        activate-environment: true
+        enable-cache: true
+        cache-dependency-glob: pyproject.toml
+    # Resolve fresh versions instead of installing uv.lock, so new TensorFlow/Keras
+    # releases are tested as soon as they are out.
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        tensorflow="tensorflow"
         if [ "${{ matrix.tensorflow }}" != "latest" ]; then
-          python -m pip install "tensorflow==${{ matrix.tensorflow }}"
+          tensorflow="tensorflow==${{ matrix.tensorflow }}"
         fi
-        python -m pip install -e ".[parser]" pytest
+        uv pip install -e ".[parser]" --group dev "$tensorflow"
         python -c "import tensorflow as tf, keras; print('tensorflow', tf.__version__, '| keras', keras.__version__)"
     - name: Run tests
       run: python -m pytest test -v
