@@ -8,7 +8,8 @@ The project uses [uv](https://docs.astral.sh/uv/). Dependencies are declared in
 `pyproject.toml` (core, the `examples` extra, and the `dev` group) and locked in `uv.lock`.
 
 ```bash
-uv sync                                    # install dependencies (add --extra examples for examples/)
+uv sync                                    # install dependencies (add --extra examples for examples/,
+                                           # --extra parser for the parser tests)
 uv run pytest test                         # run the test suite
 uv run pytest test/test_core.py -k name    # run a subset
 uv run ruff check --fix .                  # lint (the rule set is in pyproject.toml)

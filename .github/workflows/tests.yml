@@ -75,7 +75,7 @@ jobs:
         if [ "${{ matrix.tensorflow }}" != "latest" ]; then
           tensorflow="tensorflow==${{ matrix.tensorflow }}"
         fi
-        uv pip install -e . --group dev "$tensorflow"
+        uv pip install -e ".[parser]" --group dev "$tensorflow"
         python -c "import tensorflow as tf, keras; print('tensorflow', tf.__version__, '| keras', keras.__version__)"
     - name: Run tests
       run: python -m pytest test -v

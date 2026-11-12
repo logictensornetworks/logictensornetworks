@@ -1,0 +1,128 @@
+// TPTP FOF and CNF for logictensornetworks#26, for lark's LALR parser and contextual lexer.
+//
+// Rule and token names are those of the official grammar, SyntaxBNF v9.3.1.6 in
+// https://github.com/TPTPWorld/SyntaxBNF, so that the two can be read side by side. This file has
+// its syntactic rules (::=) for FOF and CNF. Differences:
+//
+// - tptp.py applies the semantic rules (:==), such as the list of roles.
+// - Rules that only rename another rule are merged, for example <constant> and <functor>.
+// - $true and $false are tokens here, which applies their semantic rule: they are formulas, so
+//   they take no arguments and are not terms.
+// - <source> is read as a <general_term>, as it was before the grammar expanded it. Annotations
+//   have no effect on the meaning of a formula, and three of the official test files have
+//   sources that the expanded rule rejects, such as theory(equality).
+// - The other languages are valid TPTP that the reader refuses, so it stops as soon as it sees one
+//   of them. The rules named unsupported_... are where that happens.
+// - An include is read here, and tptp.py reads the file it names.
+
+// ------------------------------------------------------------------------------------- Files
+
+tptp_file: _tptp_input*
+_tptp_input: fof_annotated | cnf_annotated | include | unsupported_language "("
+
+fof_annotated: "fof" "(" name "," formula_role "," fof_formula annotations? ")" "."
+cnf_annotated: "cnf" "(" name "," formula_role "," cnf_formula annotations? ")" "."
+!unsupported_language: "tff" | "thf" | "tcf" | "tpi"
+
+// <file_name> is an <atomic_word>. The last <name> is a <space_name>, which tptp.py refuses.
+include: INCLUDE "(" plain_word ("," formula_selection ("," name)?)? ")" "."
+formula_selection: "[" name ("," name)* "]" | "*"
+
+formula_role: LOWER_WORD ("-" general_term)?
+annotations: "," general_term ("," general_list)?
+
+// --------------------------------------------------------------------------------------- FOF
+
+?fof_formula: fof_logic_formula | fof_sequent
+?fof_logic_formula: fof_binary_pair | fof_or_formula | fof_and_formula | fof_unit_formula
+
+fof_binary_pair: fof_unit_formula NONASSOC_CONNECTIVE fof_unit_formula
+fof_or_formula: fof_unit_formula ("|" fof_unit_formula)+
+fof_and_formula: fof_unit_formula ("&" fof_unit_formula)+
+
+?fof_unit_formula: fof_unitary_formula | fof_unary_formula
+?fof_unitary_formula: fof_quantified_formula | fof_atomic_formula | "(" fof_logic_formula ")"
+?fof_unary_formula: "~" fof_unit_formula -> negation
+                  | fof_infix_unary
+fof_infix_unary: fof_term "!=" fof_term
+
+fof_quantified_formula: FOF_QUANTIFIER "[" fof_variable_list "]" ":" fof_unit_formula
+fof_variable_list: UPPER_WORD ("," UPPER_WORD)*
+
+?fof_atomic_formula: fof_plain_term        -> fof_plain_atomic_formula
+                   | fof_term "=" fof_term -> fof_defined_infix_formula
+                   | "$true"               -> true_formula
+                   | "$false"              -> false_formula
+                   | fof_unsupported_term
+
+// Terms
+?fof_term: fof_plain_term
+         | fof_unsupported_term
+         | NUMBER          -> defined_term
+         | DISTINCT_OBJECT -> defined_term
+         | UPPER_WORD      -> variable
+
+fof_plain_term: plain_word ("(" _fof_arguments ")")?
+fof_unsupported_term: (DOLLAR_WORD | DOLLAR_DOLLAR_WORD | BACK_QUOTED) ("(" _fof_arguments ")")?
+_fof_arguments: fof_term ("," fof_term)*
+
+// Sequents
+fof_sequent: fof_formula_tuple "-->" fof_formula_tuple | "(" fof_sequent ")"
+fof_formula_tuple: "[" (fof_logic_formula ("," fof_logic_formula)*)? "]"
+
+// --------------------------------------------------------------------------------------- CNF
+
+?cnf_formula: cnf_disjunction | "(" cnf_formula ")"
+?cnf_disjunction: cnf_literal
+                | cnf_literal ("|" cnf_literal)+ -> fof_or_formula
+?cnf_literal: fof_atomic_formula
+            | "~" fof_atomic_formula         -> negation
+            | "~" "(" fof_atomic_formula ")" -> negation
+            | fof_infix_unary
+
+// ------------------------------------------------------------------------------- Annotations
+
+?general_term: general_data | general_data ":" general_term | general_list
+?general_data: atomic_word | general_function | UPPER_WORD | NUMBER | DISTINCT_OBJECT | formula_data
+general_function: atomic_word "(" general_terms ")"
+?formula_data: "$fof" "(" fof_formula ")"
+             | "$cnf" "(" cnf_formula ")"
+             | "$fot" "(" fof_term ")"
+             | unsupported_formula_data "("
+!unsupported_formula_data: "$tff" | "$thf"
+general_list: "[" general_terms? "]"
+general_terms: general_term ("," general_term)*
+
+// ------------------------------------------------------------------------------------- Words
+
+name: atomic_word | INTEGER
+?atomic_word: plain_word | BACK_QUOTED
+plain_word: LOWER_WORD | SINGLE_QUOTED
+
+// ------------------------------------------------------------------------------------ Tokens
+
+INCLUDE: "include"
+NONASSOC_CONNECTIVE: "<=>" | "=>" | "<=" | "<~>" | "~|" | "~&"
+FOF_QUANTIFIER: "!" | "?"
+
+UPPER_WORD: /[A-Z][A-Za-z0-9_]*/
+LOWER_WORD: /[a-z][A-Za-z0-9_]*/
+DOLLAR_WORD: /\$[A-Za-z0-9_]*/
+DOLLAR_DOLLAR_WORD: /\$\$[A-Za-z0-9_]*/
+BACK_QUOTED: /`[A-Z][A-Za-z0-9_]*/
+
+// Visible characters and spaces. A backslash can only escape the quote and itself.
+SINGLE_QUOTED: /'([ -&(-\[\]-~]|\\['\\])+'/
+DISTINCT_OBJECT: /"([ !#-\[\]-~]|\\["\\])+"/
+
+NUMBER: REAL | RATIONAL | INTEGER
+REAL: /[+-]?((0|[1-9][0-9]*)\.[0-9]+([Ee][+-]?[0-9]+)?|[0-9]+[Ee][+-]?[0-9]+)/
+RATIONAL: /[+-]?(0|[1-9][0-9]*)\/[1-9][0-9]*/
+INTEGER: /[+-]?(0|[1-9][0-9]*)/
+
+LINE_COMMENT: /%[^\r\n]*/
+BLOCK_COMMENT: /\/\*[\s\S]*?\*\//
+WHITESPACE: /\s+/
+%ignore LINE_COMMENT
+%ignore BLOCK_COMMENT
+%ignore WHITESPACE
