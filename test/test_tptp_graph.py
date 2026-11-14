@@ -417,6 +417,19 @@ def test_training_without_axioms_changes_nothing():
     )
 
 
+def test_no_steps_change_nothing_and_return_the_current_values():
+    grounding = Grounding(tptp.parse(PROBLEM), embedding_size=SIZE)
+    before = [parameter.numpy().copy() for parameter in grounding.trainable_variables]
+    sat, truth = float(grounding.sat()), float(grounding.evaluate(QUERY).tensor)
+    assert grounding.train(0) == pytest.approx(sat, abs=1e-6)
+    assert grounding.train(0, reuse_graph=True) == pytest.approx(sat, abs=1e-6)
+    assert grounding.refute(QUERY, steps=0) == pytest.approx((sat, truth), abs=1e-6)
+    assert all(
+        (parameter.numpy() == start).all()
+        for parameter, start in zip(grounding.trainable_variables, before, strict=True)
+    )
+
+
 def test_training_on_chosen_statements_is_training_on_them_as_axioms():
     # A CNF problem usually puts its conjecture in negated_conjecture clauses, which are not axioms.
     chosen = tptp.parse("cnf(fact, negated_conjecture, p(a)).\ncnf(goal, axiom, ~ q(a)).")

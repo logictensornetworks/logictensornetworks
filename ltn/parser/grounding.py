@@ -162,9 +162,9 @@ class Grounding:
         statements: list[Statement] | None = None,
     ) -> float:
         """Maximizes the satisfaction of `statements`, by default the axioms, as `sat` computes it.
-        Returns the last satisfaction. A CNF problem usually puts its conjecture in
-        negated_conjecture clauses, which are not axioms: to train on them too, pass
-        `statements=problem.statements`.
+        Returns the last satisfaction, or the current one if `steps` is 0. A CNF problem usually
+        puts its conjecture in negated_conjecture clauses, which are not axioms: to train on them
+        too, pass `statements=problem.statements`.
 
         By default each call builds a new graph, and a new Adam(0.01) if no optimizer is given. If
         you call this repeatedly, for example to log between calls, `reuse_graph=True` saves the
@@ -186,6 +186,8 @@ class Grounding:
         `p` inside a quantifier (about 0.8 in the kept graph and 0.5 in a new one, in one test).
         To replace a kept graph after such a change, pass a different optimizer. A kept graph is
         also tied to its statements: a call with different statements builds a new graph."""
+        if steps < 1:  # nothing to train
+            return float(self.sat(statements))
         kept_step, kept_optimizer, kept_statements = getattr(self, "_kept_step", (None, None, None))
         if reuse_graph:
             optimizer = optimizer or kept_optimizer
@@ -229,6 +231,8 @@ class Grounding:
         from fresh groundings, since saturated predicates have vanishing gradients."""
         if isinstance(formula, str):
             formula = self.problem.parse_formula(formula)
+        if steps < 1:  # nothing to search
+            return float(self.sat()), float(self.evaluate(formula).tensor)
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
         params = self.trainable_variables
 
