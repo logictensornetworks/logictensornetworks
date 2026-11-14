@@ -577,13 +577,18 @@ def test_kept_graph_does_not_see_a_new_predicate():
 
 
 def test_kept_graph_is_rebuilt_for_other_statements():
-    problem = tptp.parse("fof(fact, axiom, p(a)).\nfof(goal, negated_conjecture, ~ p(a)).")
+    # The other statements also train q and b. A Keras optimizer refuses parameters that it
+    # didn't start with, so they get a new optimizer as well as a new graph.
+    problem = tptp.parse("fof(fact, axiom, p(a)).\nfof(goal, negated_conjecture, ~ q(b)).")
     grounding = Grounding(problem, embedding_size=SIZE)
     traces = count_traces(grounding)
     grounding.train(1, reuse_graph=True)
     built = len(traces)
+    b = grounding.constants["b"].tensor
+    before = b.numpy().copy()
     grounding.train(1, reuse_graph=True, statements=problem.statements)
     rebuilt = len(traces)
     assert rebuilt > built
+    assert (b.numpy() != before).any()
     grounding.train(1, reuse_graph=True, statements=problem.statements)
     assert len(traces) == rebuilt

@@ -185,15 +185,17 @@ class Grounding:
         network or constant object for a symbol, the domain, a new connective or quantifier, and
         `p` inside a quantifier (about 0.8 in the kept graph and 0.5 in a new one, in one test).
         To replace a kept graph after such a change, pass a different optimizer. A kept graph is
-        also tied to its statements: a call with different statements builds a new graph."""
+        also tied to its statements: a call with different statements builds a new graph. It also
+        starts a new optimizer, unless it is given one, because a Keras optimizer only trains the
+        parameters it started with, and other statements can have other parameters."""
         if steps < 1:  # nothing to train
             return float(self.sat(statements))
         kept_step, kept_optimizer, kept_statements = getattr(self, "_kept_step", (None, None, None))
-        if reuse_graph:
+        key = None if statements is None else tuple(statements)
+        if reuse_graph and key == kept_statements:
             optimizer = optimizer or kept_optimizer
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
         params = self.trainable_variables
-        key = None if statements is None else tuple(statements)
 
         @tf.function
         def step():
