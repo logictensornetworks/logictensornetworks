@@ -14,10 +14,12 @@ value stays the same. So this file looks at what the reader builds, in four ways
 Tests 1 and 2 use the tables of test_tptp.py, so they add nothing new to review. The only new thing
 to review is the pair PROBLEM and by_hand(), under "A whole problem".
 
-The last section tests `train(reuse_graph=True)`, which keeps the graph between calls.
+The last two sections test `train(reuse_graph=True)`, which keeps the graph between calls, and
+that the example of the README runs.
 """
 
 import hashlib
+import pathlib
 
 import pytest
 import tensorflow as tf
@@ -407,6 +409,23 @@ def test_refutation_matches_the_hand_written_program():
     assert_same_parameters(grounding, expected_parameters, before)
 
 
+def test_refutation_finds_a_counterexample_only_for_what_does_not_follow():
+    # Zeus is not a man, so nothing makes him mortal: the search finds a grounding that satisfies
+    # the axioms and makes mortal(zeus) false. mortal(socrates) follows from the axioms, so the
+    # search cannot make it false: with the default operators, it cannot go below 0.877 while the
+    # axioms are satisfied to q = 0.95.
+    problem = tptp.parse("""
+        fof(socrates, axiom, man(socrates)).
+        fof(zeus, axiom, ~ man(zeus)).
+        fof(mortals, axiom, ! [X] : ( man(X) => mortal(X) )).
+    """)
+    tf.keras.utils.set_random_seed(0)
+    sat, truth = Grounding(problem).refute("mortal(zeus)", steps=1000)
+    assert sat > 0.94 and truth < 0.1
+    sat, truth = Grounding(problem).refute("mortal(socrates)", steps=1000)
+    assert sat > 0.94 and truth > 0.8
+
+
 def test_training_without_axioms_changes_nothing():
     grounding = Grounding(tptp.parse("fof(test, conjecture, p(a))."), embedding_size=SIZE)
     before = [parameter.numpy().copy() for parameter in grounding.trainable_variables]
@@ -592,3 +611,16 @@ def test_kept_graph_is_rebuilt_for_other_statements():
     assert (b.numpy() != before).any()
     grounding.train(1, reuse_graph=True, statements=problem.statements)
     assert len(traces) == rebuilt
+
+
+# --------------------------------------------------------------------------------------- The README
+
+
+def test_readme_example_runs(capsys):
+    """Runs the first example of ltn/parser/README.md as it is written there. The README says
+    that it prints a truth value close to 1."""
+    readme = pathlib.Path(__file__).parent.parent / "ltn" / "parser" / "README.md"
+    example = readme.read_text(encoding="utf-8").split("```python\n")[1].split("```")[0]
+    tf.keras.utils.set_random_seed(0)
+    exec(example, {})
+    assert float(capsys.readouterr().out) > 0.99

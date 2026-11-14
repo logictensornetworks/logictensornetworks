@@ -795,6 +795,15 @@ def test_value_of_a_long_chain():
     assert values_read_from(program) == values_of(functools.reduce(And, [TRUE] * 2000 + [P(a)]))
 
 
+def test_formula_too_deep_to_evaluate_is_refused():
+    # Evaluating a formula takes more of Python's stack than parsing it, so a formula can parse
+    # and still be nested too deeply to evaluate.
+    depth = sys.getrecursionlimit() * 6 // 10
+    program = "fof(test, axiom, " + "~ " * depth + "p(a))."
+    with pytest.raises(NotImplementedError, match="nested too deeply"):
+        values_read_from(program)
+
+
 # With herbrand_depth=n, variables also range over function terms up to depth n.
 
 
@@ -862,6 +871,14 @@ def test_file_gets_the_included_statements_in_place(library):
 def test_include_selects_statements_by_name(library, selection, pasted):
     path = write(library, "Problems/P.p", f"include('Axioms/A.ax', {selection}).\n")
     assert tptp.parse_file(path, root=library) == tptp.parse(pasted)
+
+
+def test_file_included_twice_gives_its_statements_twice(library):
+    # P.p includes B.ax itself and again through A.ax. Nothing is left out, as if both includes
+    # were pasted.
+    path = write(library, "Problems/P.p", "include('Axioms/B.ax').\ninclude('Axioms/A.ax').\n")
+    problem = tptp.parse_file(path, root=library)
+    assert [statement.name for statement in problem.statements] == ["b1", "b1", "a1", "a2"]
 
 
 def test_include_is_looked_up_next_to_the_file_first(library):

@@ -22,6 +22,8 @@ grounding.train(500)
 print(float(grounding.evaluate("mortal(socrates)").tensor))
 ```
 
+This prints a truth value close to 1, for example `0.9999988079071045`. The groundings start out random, so the value changes a little from run to run.
+
 `Grounding` gives every symbol a default: constants are trainable embeddings, functions and predicates are MLPs, and propositions are trainable truth values. Replace any of them before training, for example with `grounding.predicates["man"] = ...`. Variables range over the constants of the problem, and also over function terms with `Grounding(problem, herbrand_depth=1)`. If a problem has no constants, give its variables something to range over with `Grounding(problem, extra_individuals=1)` or more.
 
 `grounding.sat()` aggregates the axioms into one truth value, which is 1 for a problem without axioms, and `grounding.train()` maximizes it. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not axioms. To train on every clause, pass `statements=problem.statements`.
@@ -39,6 +41,8 @@ Every call to `grounding.train` builds a new TensorFlow graph, which takes a whi
 ```python
 problem = tptp.parse_file("TPTP-v9.3.1/Problems/GRP/GRP001-1.p", root="TPTP-v9.3.1")
 ```
+
+The statements of an included file take the place of its include, every time. So a file that is included twice, for example by the problem and again by one of its axiom files, gives its statements twice, and `sat()` counts them twice.
 
 ### Errors
 
