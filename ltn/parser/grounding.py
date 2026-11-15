@@ -251,8 +251,8 @@ class Grounding:
             return sat_kb, truth
 
         for _ in range(steps):
-            sat_kb, truth = step()
-        return float(sat_kb), float(truth)
+            step()
+        return float(self.sat()), float(self.evaluate(formula).tensor)
 
     def _distinct_values(self) -> ltn.core.Formula | None:
         """The implicit axiom that different values are unequal, as one formula: for every pair of

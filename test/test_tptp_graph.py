@@ -402,9 +402,11 @@ def test_refutation_matches_the_hand_written_program():
         return sat, truth
 
     for _ in range(STEPS):
-        sat, truth = step()
+        step()
 
-    expected = pytest.approx((float(sat), float(truth)), abs=1e-4)
+    with tf.GradientTape() as tape:
+        sat = expected_sat(tape)
+    expected = pytest.approx((float(sat), float(query())), abs=1e-4)
     assert grounding.refute(QUERY, steps=STEPS) == expected
     assert_same_parameters(grounding, expected_parameters, before)
 
