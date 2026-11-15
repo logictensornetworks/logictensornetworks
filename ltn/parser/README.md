@@ -26,6 +26,8 @@ This prints a truth value close to 1, for example `0.9999988079071045`. The grou
 
 `Grounding` gives every symbol a default: constants are trainable embeddings, functions and predicates are MLPs, and propositions are trainable truth values. Replace any of them before training, for example with `grounding.predicates["man"] = ...`. Variables range over the constants of the problem, and also over function terms with `Grounding(problem, herbrand_depth=1)`. If a problem has no constants, give its variables something to range over with `Grounding(problem, extra_individuals=1)` or more.
 
+`grounding.train()` calls models in training mode, so custom Dropout and BatchNormalization layers behave as they do during Keras training. Evaluation, `sat()`, and refutation use inference mode; pass `training=True` to `evaluate()` or `sat()` when building your own training loop.
+
 `grounding.sat()` aggregates the axioms into one truth value, which is 1 for a problem without axioms, and `grounding.train()` maximizes it. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not axioms. To train on every clause, pass `statements=problem.statements`.
 
 TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. `sat()` also includes the implicit axiom that different values are unequal, so that training keeps them apart.

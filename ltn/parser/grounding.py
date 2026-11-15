@@ -118,7 +118,7 @@ class Grounding:
         # constants with equal values share one grounding, so a parameter can come twice
         return list({id(param): param for param in params}.values())
 
-    def individuals(self) -> list[ltn.core.Term]:
+    def individuals(self, *, training: bool = False) -> list[ltn.core.Term]:
         """The individuals that variables range over. Call it inside the tape when training:
         they depend on the trainable constants and functions."""
         terms = {Fn(c): self.constants[c] for c in self.domain}
@@ -127,7 +127,7 @@ class Grounding:
             for f, function in self.functions.items():
                 for args in itertools.product(list(terms), repeat=self.problem.functions[f]):
                     if Fn(f, args) not in terms:
-                        new[Fn(f, args)] = self._apply(function, [terms[a] for a in args])
+                        new[Fn(f, args)] = self._apply(function, [terms[a] for a in args], training)
             terms.update(new)
         return list(terms.values())
 
@@ -136,14 +136,21 @@ class Grounding:
         formula,
         tape: tf.GradientTape | None = None,
         individuals: list[ltn.core.Term] | None = None,
+        *,
+        training: bool = False,
     ) -> ltn.core.Formula:
-        """Builds the LTN formula. Call it inside the tape when training."""
+        """Builds the LTN formula, using inference mode unless `training=True`.
+
+        Call it inside the tape when training.
+        """
         if isinstance(formula, str):
             formula = self.problem.parse_formula(formula)
         if individuals is None:
-            individuals = self.individuals()
+            individuals = self.individuals(training=training)
         try:
-            return self._eval(formula, {}, lambda name: self._variable(name, individuals, tape))
+            return self._eval(
+                formula, {}, lambda name: self._variable(name, individuals, tape), training
+            )
         except RecursionError:
             raise NotImplementedError(
                 f"The formula is nested too deeply for Python's recursion limit "
@@ -151,16 +158,22 @@ class Grounding:
             ) from None
 
     def sat(
-        self, statements: list[Statement] | None = None, tape: tf.GradientTape | None = None
+        self,
+        statements: list[Statement] | None = None,
+        tape: tf.GradientTape | None = None,
+        *,
+        training: bool = False,
     ) -> tf.Tensor:
         """The satisfaction of `statements`, by default the axioms, as one truth value. It includes
         the implicit axiom that different values are unequal, and it is 1 if there is nothing to
-        satisfy."""
+        satisfy. Models use inference mode unless `training=True`."""
         if statements is None:
             statements = self.problem.with_role(*AXIOM_ROLES)
-        individuals = self.individuals()
-        formulas = [self.evaluate(s.formula, tape, individuals) for s in statements]
-        distinct = self._distinct_values()
+        individuals = self.individuals(training=training)
+        formulas = [
+            self.evaluate(s.formula, tape, individuals, training=training) for s in statements
+        ]
+        distinct = self._distinct_values(training=training)
         if distinct is not None:
             formulas.append(distinct)
         if not formulas:
@@ -175,6 +188,7 @@ class Grounding:
         statements: list[Statement] | None = None,
     ) -> float:
         """Maximizes the satisfaction of `statements`, by default the axioms, as `sat` computes it.
+        Models use training mode, enabling layers such as Dropout and BatchNormalization.
         Returns the last satisfaction, or the current one if `steps` is 0. A CNF problem usually
         puts its conjecture in negated_conjecture clauses, which are not axioms: to train on them
         too, pass `statements=problem.statements`.
@@ -212,7 +226,7 @@ class Grounding:
         @tf.function
         def step():
             with tf.GradientTape() as tape:
-                sat = self.sat(statements, tape=tape)
+                sat = self.sat(statements, tape=tape, training=True)
                 loss = 1.0 - sat
             # The forward pass may build a custom model and create its weights.
             params = self.trainable_variables
@@ -268,7 +282,7 @@ class Grounding:
             step()
         return float(self.sat()), float(self.evaluate(formula).tensor)
 
-    def _distinct_values(self) -> ltn.core.Formula | None:
+    def _distinct_values(self, *, training: bool = False) -> ltn.core.Formula | None:
         """The implicit axiom that different values are unequal, as one formula: for every pair of
         individuals with different values, they are not equal. None if there are fewer than two."""
         names, seen = [], set()
@@ -281,7 +295,7 @@ class Grounding:
         k = len(names)
         values = tf.stack([self.constants[name].tensor for name in names])
         pairs = [tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]
-        equal = tf.reshape(self.predicates["="].model(pairs), [k, k])
+        equal = tf.reshape(self.predicates["="].model(pairs, training=training), [k, k])
         unequal = tf.boolean_mask(1.0 - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
         return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
 
@@ -310,12 +324,14 @@ class Grounding:
             raise ValueError(f"The {kind} {name} takes {expected} argument{plural}, not {arity}.")
 
     @staticmethod
-    def _apply(symbol: ltn.Predicate | ltn.Function, args: list) -> ltn.core.Expression:
+    def _apply(
+        symbol: ltn.Predicate | ltn.Function, args: list, training: bool
+    ) -> ltn.core.Expression:
         """LTN takes a single argument as it is, and several arguments as a list."""
-        return symbol(args[0] if len(args) == 1 else args)
+        return symbol(args[0] if len(args) == 1 else args, training=training)
 
-    def _eval(self, f, env: dict, make_variable):
-        recurse = lambda g: self._eval(g, env, make_variable)
+    def _eval(self, f, env: dict, make_variable, training: bool):
+        recurse = lambda g: self._eval(g, env, make_variable, training)
         if isinstance(f, Var):
             return env[f.name]
         if isinstance(f, Fn):
@@ -323,7 +339,7 @@ class Grounding:
                 self._check(self.constants, {}, f.name, 0, "constant")
                 return self.constants[f.name]
             self._check(self.functions, self.problem.functions, f.name, len(f.args), "function")
-            return self._apply(self.functions[f.name], [recurse(a) for a in f.args])
+            return self._apply(self.functions[f.name], [recurse(a) for a in f.args], training)
         if isinstance(f, Atom):
             if not f.args:
                 self._check(self.propositions, {}, f.pred, 0, "proposition")
@@ -338,7 +354,7 @@ class Grounding:
             else:
                 arity = len(f.args)
                 self._check(self.predicates, self.problem.predicates, f.pred, arity, "predicate")
-            return self._apply(self.predicates[f.pred], [recurse(a) for a in f.args])
+            return self._apply(self.predicates[f.pred], [recurse(a) for a in f.args], training)
         if isinstance(f, Truth):
             return ltn.Proposition(1.0 if f.value else 0.0, trainable=False)
         if isinstance(f, Not):
@@ -350,7 +366,7 @@ class Grounding:
         if isinstance(f, Quant):
             free = set(free_vars(f.body))
             bound = {name: make_variable(name) for name in f.vars if name in free}
-            body = self._eval(f.body, {**env, **bound}, make_variable)
+            body = self._eval(f.body, {**env, **bound}, make_variable, training)
             # LTN rejects a quantifier over a variable that the body doesn't use
             used = [v for v in bound.values() if v.label in body.free_vars]
             return self.quantifiers[f.kind](used, body) if used else body
