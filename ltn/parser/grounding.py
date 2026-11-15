@@ -27,6 +27,7 @@ from ltn.parser.tree import (
     Statement,
     Truth,
     Var,
+    free_vars,
 )
 
 
@@ -347,7 +348,8 @@ class Grounding:
         if isinstance(f, Chain):
             return functools.reduce(self.connectives[f.op], [recurse(a) for a in f.args])
         if isinstance(f, Quant):
-            bound = {name: make_variable(name) for name in f.vars}
+            free = set(free_vars(f.body))
+            bound = {name: make_variable(name) for name in f.vars if name in free}
             body = self._eval(f.body, {**env, **bound}, make_variable)
             # LTN rejects a quantifier over a variable that the body doesn't use
             used = [v for v in bound.values() if v.label in body.free_vars]
