@@ -294,9 +294,10 @@ class Grounding:
             return None
         k = len(names)
         values = tf.stack([self.constants[name].tensor for name in names])
-        pairs = [tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]
-        equal = tf.reshape(self.predicates["="].model(pairs, training=training), [k, k])
-        unequal = tf.boolean_mask(1.0 - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
+        left = ltn.Variable("DistinctLeft", values)
+        right = ltn.Variable("DistinctRight", values)
+        equal = self.predicates["="]([left, right], training=training)
+        unequal = tf.boolean_mask(self.Not(equal).tensor, tf.logical_not(tf.eye(k, dtype=tf.bool)))
         return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
 
     def _variable(
