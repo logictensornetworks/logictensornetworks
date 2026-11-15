@@ -125,10 +125,11 @@ Public usage sketch (exact names TBD):
 
 ```python
 import ltn
+
 ltn.set_backend("torch")  # or env LTN_BACKEND=torch before import
 
-x = ltn.Variable("x", values)           # values: numpy / list / backend tensor
-P = ltn.Predicate.MLP([4])              # builds a Torch or Keras MLP
+x = ltn.Variable("x", values)  # values: numpy / list / backend tensor
+P = ltn.Predicate.MLP([4])  # builds a Torch or Keras MLP
 ```
 
 Packaging:
