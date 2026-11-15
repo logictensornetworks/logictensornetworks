@@ -38,6 +38,17 @@ def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
     )
 
 
+def _model_parameters(model: tf.keras.layers.Layer) -> list[tf.Variable]:
+    if isinstance(model, tf.keras.Sequential) and not model.built:
+        # Keras 2 refuses this model's weights until it is called, even if a child is built.
+        return (
+            [param for layer in model.layers for param in _model_parameters(layer)]
+            if model.trainable
+            else []
+        )
+    return model.trainable_variables
+
+
 class Grounding:
     """The default grounding of a problem: constants are trainable embeddings, functions and
     predicates are MLPs, propositions are trainable truth values. Variables range over the
@@ -101,7 +112,8 @@ class Grounding:
         params = [c.tensor for c in self.constants.values()]
         params += [p.tensor for p in self.propositions.values()]
         for symbol in itertools.chain(self.functions.values(), self.predicates.values()):
-            params += symbol.model.trainable_variables
+            model = getattr(symbol, "logits_model", symbol.model)
+            params += _model_parameters(model)
         # constants with equal values share one grounding, so a parameter can come twice
         return list({id(param): param for param in params}.values())
 
@@ -195,13 +207,14 @@ class Grounding:
         if reuse_graph and key == kept_statements:
             optimizer = optimizer or kept_optimizer
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
-        params = self.trainable_variables
 
         @tf.function
         def step():
             with tf.GradientTape() as tape:
                 sat = self.sat(statements, tape=tape)
                 loss = 1.0 - sat
+            # The forward pass may build a custom model and create its weights.
+            params = self.trainable_variables
             grads = tape.gradient(loss, params)
             pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
             if pairs:  # without axioms, for example, there is nothing to train
@@ -236,7 +249,6 @@ class Grounding:
         if steps < 1:  # nothing to search
             return float(self.sat()), float(self.evaluate(formula).tensor)
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
-        params = self.trainable_variables
 
         @tf.function
         def step():
@@ -244,6 +256,7 @@ class Grounding:
                 sat_kb = self.sat(tape=tape)
                 truth = self.evaluate(formula, tape=tape).tensor
                 loss = truth + tf.keras.activations.elu(beta * (q - sat_kb), alpha=alpha)
+            params = self.trainable_variables
             grads = tape.gradient(loss, params)
             pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
             if pairs:
