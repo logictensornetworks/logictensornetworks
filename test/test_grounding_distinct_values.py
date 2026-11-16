@@ -46,6 +46,55 @@ class _Equality(tf.keras.Model):
 
 
 class TestDistinctValueGroundings(unittest.TestCase):
+    def test_self_pairs_are_excluded_before_custom_operators(self) -> None:
+        names = ("1", "2", "3")
+        for operator in ("equality", "negation"):
+            with self.subTest(operator=operator):
+                grounding = _grounding(names)
+                if operator == "equality":
+                    grounding.predicates["="] = ltn.Predicate.Lambda(
+                        lambda args: tf.exp(
+                            -tf.pow(tf.reduce_sum(tf.square(args[0] - args[1]), axis=1), 0.5)
+                        )
+                    )
+                else:
+                    grounding.Not = ltn.Wrapper_Connective(
+                        lambda truth: tf.pow(1.0 - tf.square(truth), 0.5)
+                    )
+                parameters = grounding.trainable_variables
+                with tf.GradientTape() as tape:
+                    expected = _manual_sat(grounding, names)
+                references = tape.gradient(expected, parameters)
+
+                def value_and_gradients() -> tuple[tf.Tensor, list[tf.Tensor]]:
+                    with tf.GradientTape() as tape:
+                        value = grounding.sat(tape=tape)
+                    return value, tape.gradient(value, parameters)
+
+                for compute in (value_and_gradients, tf.function(value_and_gradients)):
+                    actual, gradients = compute()
+                    self.assertAlmostEqual(float(actual), float(expected), places=6)
+                    for gradient, reference in zip(gradients, references, strict=True):
+                        self.assertTrue(np.isfinite(reference.numpy()).all())
+                        np.testing.assert_allclose(
+                            gradient.numpy(), reference.numpy(), rtol=1e-5, atol=1e-7
+                        )
+
+                before = [parameter.numpy().copy() for parameter in parameters]
+                grounding.train(1, tf.keras.optimizers.SGD(0.01), reuse_graph=True)
+                for parameter, start, gradient in zip(parameters, before, references, strict=True):
+                    np.testing.assert_allclose(
+                        parameter.numpy(), start + 0.01 * gradient.numpy(), rtol=1e-5, atol=1e-7
+                    )
+                sat, truth = grounding.refute(
+                    "$true", steps=1, optimizer=tf.keras.optimizers.SGD(0.01)
+                )
+                self.assertTrue(np.isfinite(sat))
+                self.assertEqual(truth, 1.0)
+                self.assertTrue(
+                    all(np.isfinite(parameter.numpy()).all() for parameter in parameters)
+                )
+
     def test_custom_equality_dtypes_work_in_eager_and_compiled_operations(self) -> None:
         for names in (("1", "2", "3"), ('"Apple"', '"Pear"', '"Plum"')):
             for dtype in (tf.bool, tf.float64):
