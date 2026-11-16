@@ -20,6 +20,7 @@ that the example of the README runs.
 
 import hashlib
 import pathlib
+import unittest
 
 import pytest
 import tensorflow as tf
@@ -339,6 +340,46 @@ def test_variables_need_individuals():
     assert 0.0 < float(Grounding(problem, extra_individuals=1).sat()) < 1.0
 
 
+class TestGroundingValidation(unittest.TestCase):
+    def test_added_function_needs_a_declared_arity_for_herbrand_expansion(self) -> None:
+        grounding = Grounding(tptp.parse("fof(fact, axiom, p(a))."), embedding_size=1)
+        grounding.constants["a"].tensor.assign([0.0])
+        grounding.functions["h"] = ltn.Function.Lambda(lambda x: x + 1.0)
+        grounding.predicates["p"] = ltn.Predicate.Lambda(lambda x: 1.0 / (1.0 + x[:, 0]))
+        self.assertAlmostEqual(float(grounding.evaluate("p(h(a))").tensor), 0.5)
+
+        grounding.herbrand_depth = 1
+        with self.assertRaisesRegex(ValueError, "h.*declared arity"):
+            grounding.evaluate("p(a)")
+        grounding.problem.functions["h"] = 1
+        self.assertEqual([float(term.tensor[0]) for term in grounding.individuals()], [0.0, 1.0])
+        self.assertAlmostEqual(float(grounding.evaluate("p(h(a))").tensor), 0.5)
+
+    def test_deleted_domain_constant_reports_a_missing_grounding(self) -> None:
+        grounding = Grounding(tptp.parse("fof(fact, axiom, p(a))."))
+        constant = grounding.constants.pop("a")
+        with self.assertRaisesRegex(ValueError, "a.*no grounding"):
+            grounding.sat()
+        grounding.constants["a"] = constant
+        self.assertTrue(0.0 < float(grounding.sat()) < 1.0)
+
+    def test_deleted_equality_grounding_preserves_literal_equality(self) -> None:
+        problem = tptp.parse("fof(fact, axiom, 1 != 2). fof(goal, conjecture, a = b).")
+        grounding = Grounding(problem)
+        satisfaction = float(grounding.sat())
+        equality = grounding.predicates.pop("=")
+
+        with self.assertRaisesRegex(ValueError, "predicate = has no grounding"):
+            grounding.evaluate("a = b")
+        with self.assertRaisesRegex(ValueError, "predicate = has no grounding"):
+            grounding.sat()
+        self.assertEqual(float(grounding.evaluate("1 = 1").tensor), 1.0)
+        self.assertEqual(float(grounding.evaluate("1 = 2").tensor), 0.0)
+
+        grounding.predicates["="] = equality
+        self.assertAlmostEqual(float(grounding.sat()), satisfaction)
+
+
 # 4. Training
 
 
@@ -516,6 +557,25 @@ def test_kept_graph_matches_a_single_call():
     twice.train(5, reuse_graph=True)
     once.train(10)
     assert same_parameters(twice, once)
+
+
+class TestEquivalentStatements(unittest.TestCase):
+    def test_default_and_explicit_axioms_keep_the_same_graph_and_optimizer(self) -> None:
+        for explicit_first in (False, True):
+            with self.subTest(explicit_first=explicit_first):
+                twice, once = seeded_grounding(), seeded_grounding()
+                axioms = twice.problem.with_role("axiom")
+                first, second = (axioms, None) if explicit_first else (None, axioms)
+                traces = count_traces(twice)
+                optimizer = tf.keras.optimizers.Adam(0.01)
+                twice.train(5, optimizer, reuse_graph=True, statements=first)
+                built = len(traces)
+                twice.train(5, reuse_graph=True, statements=second)
+                once.train(10)
+
+                self.assertEqual(len(traces), built)
+                self.assertEqual(int(optimizer.iterations), 10)
+                self.assertTrue(same_parameters(twice, once))
 
 
 def test_second_flagged_call_does_not_trace_again():

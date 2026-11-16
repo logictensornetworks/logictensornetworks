@@ -130,11 +130,21 @@ class Grounding:
 
     def individuals(self, *, training: bool = False) -> list[ltn.core.Term]:
         """The individuals that variables range over. Call it inside the tape when training:
-        they depend on the trainable constants and functions."""
-        terms = {Fn(c): self.constants[c] for c in self.domain}
+        they depend on the trainable constants and functions. Added functions need an arity in
+        `problem.functions` for Herbrand expansion."""
+        terms = {}
+        for name in self.domain:
+            if name not in self.constants:
+                raise ValueError(f"The domain constant {name} has no grounding in constants.")
+            terms[Fn(name)] = self.constants[name]
         for _ in range(self.herbrand_depth):
             new = {}
             for f, function in self.functions.items():
+                if f not in self.problem.functions:
+                    raise ValueError(
+                        f"The function {f} has no declared arity for Herbrand expansion. "
+                        f"Set grounding.problem.functions[{f!r}] to its arity."
+                    )
                 for args in itertools.product(list(terms), repeat=self.problem.functions[f]):
                     if Fn(f, args) not in terms:
                         new[Fn(f, args)] = self._apply(function, [terms[a] for a in args], training)
@@ -218,17 +228,20 @@ class Grounding:
         Only use the flag if you are sure that the graph hasn't changed. A kept graph picks up new
         values of constants, propositions and network weights, through `assign` or training, and
         the optimizer's learning rate, for example `optimizer.learning_rate = 0.5`. It silently
-        misses anything else and keeps using the old objects, with no error: the formulas, a new
-        network or constant object for a symbol, the domain, a new connective or quantifier, and
+        misses other changes to the grounding and keeps using the old objects, with no error: a
+        new network or constant object for a symbol, the domain, a new connective or quantifier, and
         `p` inside a quantifier (about 0.8 in the kept graph and 0.5 in a new one, in one test).
         To replace a kept graph after such a change, pass a different optimizer. A kept graph is
-        also tied to its statements: a call with different statements builds a new graph. It also
-        starts a new optimizer, unless it is given one, because a Keras optimizer only trains the
-        parameters it started with, and other statements can have other parameters."""
+        also tied to its effective statements: changing their sequence or formulas builds a new
+        graph. The default axioms and the same explicit sequence share a graph. Changing statements
+        also starts a new optimizer, unless it is given one, because a Keras optimizer only trains
+        the parameters it started with, and other statements can have other parameters."""
         if steps < 1:  # nothing to train
             return float(self.sat(statements))
+        if statements is None:
+            statements = self.problem.with_role(*AXIOM_ROLES)
         kept_step, kept_optimizer, kept_statements = getattr(self, "_kept_step", (None, None, None))
-        key = None if statements is None else tuple(statements)
+        key = tuple(statements)
         if reuse_graph and key == kept_statements:
             optimizer = optimizer or kept_optimizer
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
@@ -302,6 +315,7 @@ class Grounding:
                 names.append(name)
         if len(names) < 2:
             return None
+        self._check(self.predicates, {"=": 2}, "=", 2, "predicate")
         k = len(names)
         values = tf.stack([self.constants[name].tensor for name in names])
         # Excluded self-pairs can have undefined gradients in custom equality or negation.
@@ -317,8 +331,9 @@ class Grounding:
     ) -> ltn.Variable:
         if not individuals:
             raise ValueError(
-                "Variables have nothing to range over, because the problem has no constants. "
-                "Pass extra_individuals=1 or more to Grounding, or fill its domain."
+                "Variables have nothing to range over, because the individuals list is empty. "
+                "Pass a nonempty individuals list to evaluate, fill the grounding's domain, "
+                "or pass extra_individuals=1 or more to Grounding."
             )
         if tape is not None:
             return ltn.Variable.from_constants(label, individuals, tape=tape)
@@ -330,6 +345,8 @@ class Grounding:
     def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:
         """A clear error for a symbol that a query uses wrongly, instead of a KeyError."""
         if name not in groundings:
+            if arities.get(name) == arity:
+                raise ValueError(f"The {kind} {name} has no grounding.")
             raise ValueError(f"{name} is not a {kind} of the problem.")
         if arities.get(name, arity) != arity:
             expected = arities[name]
@@ -349,13 +366,13 @@ class Grounding:
             return env[f.name]
         if isinstance(f, Fn):
             if not f.args:
-                self._check(self.constants, {}, f.name, 0, "constant")
+                self._check(self.constants, self.problem.functions, f.name, 0, "constant")
                 return self.constants[f.name]
             self._check(self.functions, self.problem.functions, f.name, len(f.args), "function")
             return self._apply(self.functions[f.name], [recurse(a) for a in f.args], training)
         if isinstance(f, Atom):
             if not f.args:
-                self._check(self.propositions, {}, f.pred, 0, "proposition")
+                self._check(self.propositions, self.problem.predicates, f.pred, 0, "proposition")
                 return self.propositions[f.pred]
             if f.pred == "=":
                 values = [
@@ -364,6 +381,7 @@ class Grounding:
                 ]
                 if None not in values:  # both are interpreted as themselves
                     return ltn.Proposition(1.0 if values[0] == values[1] else 0.0, trainable=False)
+                self._check(self.predicates, {"=": 2}, "=", 2, "predicate")
             else:
                 arity = len(f.args)
                 self._check(self.predicates, self.problem.predicates, f.pred, arity, "predicate")

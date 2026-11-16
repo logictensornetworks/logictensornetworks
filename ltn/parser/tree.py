@@ -73,8 +73,9 @@ class Quant:
 
 @dataclasses.dataclass(frozen=True)
 class Refused:
-    """A part of a formula that the reader refuses. Raising only when the formula of a statement
-    is checked means that the same thing in an annotation, which has no effect, is not refused."""
+    """A recognized formula construct whose use is rejected. Its error is raised only when
+    the enclosing formula is checked, so it can occur in a discarded annotation. Unsupported
+    languages can still fail during parsing, before such a node can be built."""
 
     error: Exception
 

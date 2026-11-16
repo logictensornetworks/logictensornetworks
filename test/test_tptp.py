@@ -23,6 +23,7 @@ Section 3 tests `tptp.parse_file`, which reads a file together with the files it
 import functools
 import subprocess
 import sys
+import unittest
 
 import pytest
 import tensorflow as tf
@@ -450,7 +451,8 @@ PARSE_ONLY = [
     "fof(+1, axiom, p(a)).",
     "fof(`Name, axiom, p(a)).",
 
-    # Annotations have no effect on the formula, so what they hold is no reason to refuse a program
+    # Supported annotation syntax has no effect on the formula, even with unsupported FOF symbols.
+    # Formula data in other languages ($tff and $thf) still needs an appropriate parser.
     "fof(test, axiom, p(a), unknown).",
     "fof(test, axiom, p(a), file('a.p'), [data(name):[colon, list, 2]]).",
     "cnf(test, plain, $false, inference(rule, [status(thm), [X, $fot(X), a]], [1, 2])).",
@@ -758,11 +760,52 @@ def test_value_of_a_query():
     assert [float(grounding.evaluate("p(b) | r(b, a)").tensor)] == values_of(Or(P(b), R([b, a])))
 
 
+class TestInterpretedQueryValues(unittest.TestCase):
+    def test_query_compares_values_absent_from_the_problem(self):
+        grounding = Grounding(tptp.parse("fof(test, axiom, p(a))."))
+        for query, expected in [
+            ("2 = 2", 1.0),
+            ("1 = 2", 0.0),
+            ("1/2 = 0.5", 1.0),
+            ("1E0 = +1", 1.0),
+            ('"Apple" = "Apple"', 1.0),
+            ('"Apple" = "Microsoft"', 0.0),
+            ('"Apple" != "Microsoft"', 1.0),
+            ('1 = "1"', 0.0),
+        ]:
+            with self.subTest(query=query):
+                self.assertEqual(float(grounding.evaluate(query).tensor), expected)
+                self.assertEqual(grounding.problem.functions, {"a": 0})
+                self.assertEqual(grounding.problem.predicates, {"p": 1})
+                self.assertEqual(grounding.problem.values, {})
+                self.assertEqual(list(grounding.constants), ["a"])
+                self.assertEqual(grounding.domain, ["a"])
+
+    def test_query_compares_nested_values(self):
+        grounding = read("fof(test, axiom, p(a)).")
+        query = "! [X] : ( (p(X) & (1/2 = 0.5)) => ~ (1 = 2) )"
+        expected = Forall(x, Implies(And(P(x), TRUE), Not(FALSE)))
+        self.assertAlmostEqual(float(grounding.evaluate(query).tensor), float(expected.tensor))
+
+    def test_statement_literal_comparisons_preserve_the_problem_values(self):
+        grounding = Grounding(tptp.parse("fof(test, axiom, 1 = 2)."))
+        self.assertEqual(grounding.problem.functions, {"1": 0, "2": 0})
+        self.assertEqual(set(grounding.problem.values), {"1", "2"})
+        self.assertEqual(set(grounding.constants), {"1", "2"})
+        self.assertEqual(set(grounding.domain), {"1", "2"})
+        self.assertEqual(
+            float(grounding.evaluate(grounding.problem.statements[0].formula).tensor), 0.0
+        )
+
+
 @pytest.mark.parametrize(
     "query, message",
     [
         ("z(a)", "z is not a predicate"),
         ("p(zz)", "zz is not a constant"),
+        ("p(2)", "2 is not a constant"),
+        ("2 = a", "2 is not a constant"),
+        ("'2' = '2'", "'2' is not a constant"),
         ("zz", "zz is not a proposition"),
         ("p(h(a))", "h is not a function"),
         ("p(a, a)", "takes 1 argument, not 2"),

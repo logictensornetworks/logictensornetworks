@@ -296,9 +296,33 @@ def _find(include: Include, path: pathlib.Path, root) -> pathlib.Path:
     )
 
 
+def _interpret_query_equalities(formula: object) -> object:
+    """Compare literal values without adding query constants to the problem or its domain."""
+    if isinstance(formula, Atom) and formula.pred == "=":
+        values = [
+            _value(arg.name) if isinstance(arg, Fn) and not arg.args else None
+            for arg in formula.args
+        ]
+        if None not in values:
+            return Truth(values[0] == values[1])
+    elif isinstance(formula, Not):
+        return Not(_interpret_query_equalities(formula.arg))
+    elif isinstance(formula, BinOp):
+        return BinOp(
+            formula.op,
+            _interpret_query_equalities(formula.left),
+            _interpret_query_equalities(formula.right),
+        )
+    elif isinstance(formula, Chain):
+        return Chain(formula.op, tuple(_interpret_query_equalities(arg) for arg in formula.args))
+    elif isinstance(formula, Quant):
+        return Quant(formula.kind, formula.vars, _interpret_query_equalities(formula.body))
+    return formula
+
+
 def parse_formula(text: str):
-    """Reads a closed formula in fof syntax, for example a query."""
+    """Reads a closed fof query, interpreting equalities between literal values."""
     formula = _guarded(lambda: _read(text, "fof_logic_formula"))
     if _guarded(lambda: free_vars(formula)):
         raise SyntaxError(f"All variables must be quantified: {free_vars(formula)}.")
-    return formula
+    return _guarded(lambda: _interpret_query_equalities(formula))

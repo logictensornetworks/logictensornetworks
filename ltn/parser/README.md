@@ -26,15 +26,19 @@ This prints a truth value close to 1, for example `0.9999988079071045`. The grou
 
 `Grounding` gives every symbol a default: constants are trainable embeddings, functions and predicates are MLPs, and propositions are trainable truth values. Replace any of them before training, for example with `grounding.predicates["man"] = ...`. Variables range over the constants of the problem, and also over function terms with `Grounding(problem, herbrand_depth=1)`. If a problem has no constants, give its variables something to range over with `Grounding(problem, extra_individuals=1)` or more.
 
+To add a new function when using Herbrand expansion, set both its grounding in `grounding.functions` and its arity in `problem.functions`. Replacing the grounding of an existing function uses its declared arity.
+
 `grounding.train()` calls models in training mode, so custom Dropout and BatchNormalization layers behave as they do during Keras training. Evaluation, `sat()`, and refutation use inference mode; pass `training=True` to `evaluate()` or `sat()` when building your own training loop.
 
-`grounding.sat()` aggregates the axioms into one truth value, which is 1 for a problem without axioms, and `grounding.train()` maximizes it. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not axioms. To train on every clause, pass `statements=problem.statements`.
+`grounding.sat()` aggregates the explicit axioms and the implicit distinctness constraint described below into one truth value, and `grounding.train()` maximizes it. It returns 1 when neither contributes a constraint. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not explicit axioms. To train on every clause, pass `statements=problem.statements`.
 
-TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. `sat()` also includes the implicit axiom that different values are unequal, so that training keeps them apart.
+TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. These comparisons also work in queries when the literals do not occur in the problem, without adding individuals to the domain. Other uses of a literal, such as `p(2)`, still need a grounding for it.
+
+`sat()` includes the implicit axiom that different interpreted values in the problem are unequal, so that training keeps them apart. This applies even when those values occur only in conjectures, so a problem without explicit axioms can have satisfaction below 1.
 
 LTN evaluates a formula on every combination of the individuals that its variables range over, so a formula with v variables over n individuals builds a tensor with n^v entries. Problems with many constants and variables can run out of memory: about a third of the problems in the TPTP library would need more than a million entries.
 
-Every call to `grounding.train` builds a new TensorFlow graph, which takes a while on a large problem. If you call it repeatedly, for example to log between calls, `grounding.train(10, reuse_graph=True)` keeps the graph and the optimizer. That also changes the results, because the optimizer's state carries on. Use it only if you are sure that the graph hasn't changed: a kept graph sees new values of constants and weights, but it silently ignores a new predicate, connective or domain, and the other things listed in the docstring of `Grounding.train`.
+Every call to `grounding.train` builds a new TensorFlow graph, which takes a while on a large problem. If you call it repeatedly, for example to log between calls, `grounding.train(10, reuse_graph=True)` keeps the graph and the optimizer. That also changes the results, because the optimizer's state carries on. An explicit `statements` list matching the default axioms reuses the same graph and optimizer. Use the flag only if you are sure that the graph hasn't changed: a kept graph sees new values of constants and weights, but it silently ignores a new predicate, connective or domain, and the other things listed in the docstring of `Grounding.train`.
 
 ### Files
 
@@ -48,7 +52,9 @@ The statements of an included file take the place of its include, every time. So
 
 ### Errors
 
-`tptp.parse` and `tptp.parse_file` raise `SyntaxError` if the text is not valid TPTP, and `NotImplementedError` if it is valid TPTP that the reader doesn't support, such as the `tff` and `thf` languages, or a formula nested too deeply for Python's recursion limit. `tptp.parse` also refuses `include`, which needs `parse_file`, and `parse_file` raises `FileNotFoundError` if it can't find an included file. A query with a symbol that the problem doesn't have raises `ValueError`.
+`tptp.parse` and `tptp.parse_file` raise `SyntaxError` if the text is not valid TPTP, and `NotImplementedError` if it is valid TPTP that the reader doesn't support, such as the `tff` and `thf` languages, or a formula nested too deeply for Python's recursion limit. `tptp.parse` also refuses `include`, which needs `parse_file`, and `parse_file` raises `FileNotFoundError` if it can't find an included file. Queries that need a symbol with no grounding raise `ValueError`; comparisons between two interpreted literals need no grounding.
+
+Annotations are discarded after their syntax is parsed. Formula data in annotations supports `$fof`, `$cnf` and `$fot`; `$tff` and `$thf` formula data still raises `NotImplementedError`.
 
 ## Adding a syntax
 
