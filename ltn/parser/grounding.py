@@ -40,14 +40,24 @@ def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
 
 
 def _model_parameters(model: tf.keras.layers.Layer) -> list[tf.Variable]:
-    if isinstance(model, tf.keras.Sequential) and not model.built:
-        # Keras 2 refuses this model's weights until it is called, even if a child is built.
-        return (
-            [param for layer in model.layers for param in _model_parameters(layer)]
-            if model.trainable
-            else []
-        )
-    return model.trainable_variables
+    if not getattr(model, "trainable", True):
+        return []
+    try:
+        return model.trainable_variables
+    except ValueError as error:
+        # Keras 2 rejects a composite's weights if any Sequential descendant is unbuilt.
+        if not (
+            hasattr(model, "_trainable_weights")
+            and str(error).startswith("Weights for model ")
+            and "have not yet been created" in str(error)
+        ):
+            raise
+    # Use Keras 2's own weights and child modules without its aggregate weight getter.
+    # Flattening the children also handles layers kept in lists/dicts, without building them.
+    params = list(model._trainable_weights)
+    for layer in model._flatten_modules(include_self=False, recursive=False):
+        params += _model_parameters(layer)
+    return params
 
 
 class Grounding:
