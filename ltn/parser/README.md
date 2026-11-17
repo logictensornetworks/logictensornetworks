@@ -28,11 +28,17 @@ This prints a truth value close to 1, for example `0.9999988079071045`. The grou
 
 To add a new function when using Herbrand expansion, set both its grounding in `grounding.functions` and its arity in `problem.functions`. Replacing the grounding of an existing function uses its declared arity.
 
+Herbrand terms are evaluated only when a quantified variable needs the domain. Ground formulas and empty axiom selections do not call functions merely to construct unused individuals.
+
 `grounding.train()` calls models in training mode, so custom Dropout and BatchNormalization layers behave as they do during Keras training. Evaluation, `sat()`, and refutation use inference mode; pass `training=True` to `evaluate()` or `sat()` when building your own training loop.
+
+For a custom training loop, `grounding.trainable_variables` collects the trainable constants, propositions and model weights once each. Fixed constants and propositions are excluded.
 
 `grounding.sat()` aggregates the explicit axioms and the implicit distinctness constraint described below into one truth value, and `grounding.train()` maximizes it. It returns 1 when neither contributes a constraint. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not explicit axioms. To train on every clause, pass `statements=problem.statements`.
 
 TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. These comparisons also work in queries when the literals do not occur in the problem, without adding individuals to the domain. Other uses of a literal, such as `p(2)`, still need a grounding for it.
+
+Equal values such as `1` and `1.0` share one `Constant`. To change their grounding, assign to the shared tensor or replace every alias with the same `Constant` object. Replacing only one alias with a different object raises `ValueError` when the grounding is used.
 
 `sat()` includes the implicit axiom that different interpreted values in the problem are unequal, so that training keeps them apart. This applies even when those values occur only in conjectures, so a problem without explicit axioms can have satisfaction below 1.
 

@@ -11,6 +11,7 @@ import functools
 import itertools
 import sys
 import warnings
+from collections.abc import Callable
 
 import tensorflow as tf
 
@@ -120,8 +121,13 @@ class Grounding:
 
     @property
     def trainable_variables(self) -> list[tf.Variable]:
-        params = [c.tensor for c in self.constants.values()]
-        params += [p.tensor for p in self.propositions.values()]
+        self._check_value_aliases()
+        params = [
+            c.tensor for c in self.constants.values() if getattr(c.tensor, "trainable", False)
+        ]
+        params += [
+            p.tensor for p in self.propositions.values() if getattr(p.tensor, "trainable", False)
+        ]
         for symbol in itertools.chain(self.functions.values(), self.predicates.values()):
             model = getattr(symbol, "logits_model", symbol.model)
             params += _model_parameters(model)
@@ -132,6 +138,7 @@ class Grounding:
         """The individuals that variables range over. Call it inside the tape when training:
         they depend on the trainable constants and functions. Added functions need an arity in
         `problem.functions` for Herbrand expansion."""
+        self._check_value_aliases()
         terms = {}
         for name in self.domain:
             if name not in self.constants:
@@ -163,14 +170,34 @@ class Grounding:
 
         Call it inside the tape when training.
         """
+        self._check_value_aliases()
+        return self._evaluate(
+            formula, self._variable_factory(individuals, tape, training), training
+        )
+
+    def _variable_factory(
+        self,
+        individuals: list[ltn.core.Term] | None,
+        tape: tf.GradientTape | None,
+        training: bool,
+    ) -> Callable[[str], ltn.Variable]:
+        """Build the domain once, inside the current tape, only if a variable needs it."""
+
+        def make_variable(name: str) -> ltn.Variable:
+            nonlocal individuals
+            if individuals is None:
+                individuals = self.individuals(training=training)
+            return self._variable(name, individuals, tape)
+
+        return make_variable
+
+    def _evaluate(
+        self, formula, make_variable: Callable[[str], ltn.Variable], training: bool
+    ) -> ltn.core.Formula:
         if isinstance(formula, str):
             formula = self.problem.parse_formula(formula)
-        if individuals is None:
-            individuals = self.individuals(training=training)
         try:
-            return self._eval(
-                formula, {}, lambda name: self._variable(name, individuals, tape), training
-            )
+            return self._eval(formula, {}, make_variable, training)
         except RecursionError:
             raise NotImplementedError(
                 f"The formula is nested too deeply for Python's recursion limit "
@@ -187,12 +214,11 @@ class Grounding:
         """The satisfaction of `statements`, by default the axioms, as one truth value. It includes
         the implicit axiom that different values are unequal, and it is 1 if there is nothing to
         satisfy. Models use inference mode unless `training=True`."""
+        self._check_value_aliases()
         if statements is None:
             statements = self.problem.with_role(*AXIOM_ROLES)
-        individuals = self.individuals(training=training)
-        formulas = [
-            self.evaluate(s.formula, tape, individuals, training=training) for s in statements
-        ]
+        make_variable = self._variable_factory(None, tape, training)
+        formulas = [self._evaluate(s.formula, make_variable, training) for s in statements]
         distinct = self._distinct_values(training=training)
         if distinct is not None:
             formulas.append(distinct)
@@ -236,6 +262,7 @@ class Grounding:
         graph. The default axioms and the same explicit sequence share a graph. Changing statements
         also starts a new optimizer, unless it is given one, because a Keras optimizer only trains
         the parameters it started with, and other statements can have other parameters."""
+        self._check_value_aliases()
         if steps < 1:  # nothing to train
             return float(self.sat(statements))
         if statements is None:
@@ -305,6 +332,24 @@ class Grounding:
             step()
         return float(self.sat()), float(self.evaluate(formula).tensor)
 
+    def _check_value_aliases(self) -> None:
+        """Reject replacements that give equal interpreted values different groundings."""
+        by_value = {}
+        for name, value in self.problem.values.items():
+            if name not in self.constants:
+                continue  # Missing constants are reported when a formula or domain needs them.
+            constant = self.constants[name]
+            if value in by_value:
+                other_name, other_constant = by_value[value]
+                if constant is not other_constant:
+                    raise ValueError(
+                        f"The constants {other_name} and {name} have the same interpreted value "
+                        "but different groundings. Assign the same Constant to every alias, "
+                        "or update their shared tensor with assign()."
+                    )
+            else:
+                by_value[value] = name, constant
+
     def _distinct_values(self, *, training: bool = False) -> ltn.core.Formula | None:
         """The implicit axiom that different values are unequal, as one formula: for every pair of
         individuals with different values, they are not equal. None if there are fewer than two."""
@@ -316,6 +361,8 @@ class Grounding:
         if len(names) < 2:
             return None
         self._check(self.predicates, {"=": 2}, "=", 2, "predicate")
+        for name in names:
+            self._check(self.constants, self.problem.functions, name, 0, "constant")
         k = len(names)
         values = tf.stack([self.constants[name].tensor for name in names])
         # Excluded self-pairs can have undefined gradients in custom equality or negation.
@@ -357,8 +404,9 @@ class Grounding:
     def _apply(
         symbol: ltn.Predicate | ltn.Function, args: list, training: bool
     ) -> ltn.core.Expression:
-        """LTN takes a single argument as it is, and several arguments as a list."""
-        return symbol(args[0] if len(args) == 1 else args, training=training)
+        """FromLogits keeps its list input, including for a single argument."""
+        inputs = args[0] if len(args) == 1 and not hasattr(symbol, "logits_model") else args
+        return symbol(inputs, training=training)
 
     def _eval(self, f, env: dict, make_variable, training: bool):
         recurse = lambda g: self._eval(g, env, make_variable, training)

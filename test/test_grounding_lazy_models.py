@@ -12,6 +12,15 @@ pytest.importorskip("lark")
 from ltn.parser import Grounding, tptp
 
 
+class _UnaryLogits(tf.keras.Model):
+    def __init__(self, network: tf.keras.Model) -> None:
+        super().__init__(name="unary_logits")
+        self.network = network
+
+    def call(self, inputs: list[tf.Tensor], training: bool = False) -> tf.Tensor:
+        return self.network(inputs[0], training=training)
+
+
 def lazy_grounding(symbol: str, role: str = "axiom") -> tuple[Grounding, tf.keras.Model, str]:
     formula = "p(a)" if symbol == "predicate" else "p(f(a))"
     grounding = Grounding(tptp.parse(f"fof(test, {role}, {formula})."), embedding_size=1)
@@ -21,7 +30,7 @@ def lazy_grounding(symbol: str, role: str = "axiom") -> tuple[Grounding, tf.kera
     )
     if symbol == "predicate":
         grounding.predicates["p"] = ltn.Predicate.FromLogits(
-            model, activation_function="sigmoid", with_class_indexing=False
+            _UnaryLogits(model), activation_function="sigmoid", with_class_indexing=False
         )
     else:
         grounding.functions["f"] = ltn.Function(model)

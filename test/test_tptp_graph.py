@@ -349,8 +349,9 @@ class TestGroundingValidation(unittest.TestCase):
         self.assertAlmostEqual(float(grounding.evaluate("p(h(a))").tensor), 0.5)
 
         grounding.herbrand_depth = 1
+        self.assertAlmostEqual(float(grounding.evaluate("p(a)").tensor), 1.0)
         with self.assertRaisesRegex(ValueError, "h.*declared arity"):
-            grounding.evaluate("p(a)")
+            grounding.evaluate("! [X] : p(X)")
         grounding.problem.functions["h"] = 1
         self.assertEqual([float(term.tensor[0]) for term in grounding.individuals()], [0.0, 1.0])
         self.assertAlmostEqual(float(grounding.evaluate("p(h(a))").tensor), 0.5)
