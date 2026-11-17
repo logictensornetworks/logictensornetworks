@@ -35,6 +35,8 @@ jobs:
       run: uv run --no-sync ruff check .
     - name: Format
       run: uv run --no-sync ruff format --check .
+    - name: Test runner recovery policy
+      run: node --test .github/scripts/retry-runner-startup.test.cjs
 
   test:
     runs-on: ${{ matrix.os }}
