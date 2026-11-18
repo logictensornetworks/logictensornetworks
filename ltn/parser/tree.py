@@ -123,6 +123,8 @@ class Problem:
             self._collect(statement.formula)
 
     def _collect(self, f) -> None:
+        if isinstance(f, Refused):
+            raise f.error
         if isinstance(f, (Atom, Fn)):
             table = self.predicates if isinstance(f, Atom) else self.functions
             name = f.pred if isinstance(f, Atom) else f.name

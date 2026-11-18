@@ -88,8 +88,9 @@ general_function: atomic_word "(" general_terms ")"
 ?formula_data: "$fof" "(" fof_formula ")"
              | "$cnf" "(" cnf_formula ")"
              | "$fot" "(" fof_term ")"
-             | unsupported_formula_data "("
-!unsupported_formula_data: "$tff" | "$thf"
+             | unsupported_formula_data
+unsupported_formula_data: UNSUPPORTED_FORMULA_DATA "(" general_terms? ")"
+UNSUPPORTED_FORMULA_DATA: "$tff" | "$thf"
 general_list: "[" general_terms? "]"
 general_terms: general_term ("," general_term)*
 

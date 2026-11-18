@@ -97,10 +97,12 @@ class _SyntaxTree(lark.Transformer):
             f"{language}(...) at line {language.line} is not supported, only fof(...) and cnf(...)."
         )
 
-    def unsupported_formula_data(self, language):
-        raise NotImplementedError(
-            f"{language}(...) at line {language.line} is not supported, "
-            "only $fof(...) and $cnf(...)."
+    def unsupported_formula_data(self, language, *rest) -> Refused:
+        return Refused(
+            NotImplementedError(
+                f"{language}(...) at line {language.line} is not supported, "
+                "only $fof(...) and $cnf(...)."
+            )
         )
 
     def formula_role(self, word, *subrole) -> str:

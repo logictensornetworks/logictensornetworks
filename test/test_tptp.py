@@ -464,6 +464,8 @@ PARSE_ONLY = [
     "fof(test, axiom, p(a), unknown, [$fof(`P(a))]).",
     "fof(test, axiom, p(a), unknown, [$fot($sum(1, 2))]).",
     "fof(test, axiom, p(a), unknown, [$cnf($less(1, 2))]).",
+    "fof(test, axiom, p(a), unknown, [$tff(p)]).",
+    "fof(test, axiom, p(a), unknown, [$thf(p)]).",
 ]
 # fmt: on
 
@@ -631,8 +633,6 @@ NOT_SUPPORTED = [
     ("cnf(x, axiom, ~ $less(1, 2)).",              "a negated defined predicate"),
     ("fof(x, axiom, `P).",                         "a back-quoted constant"),
     ("fof(x, axiom, p(`A)).",                      "a back-quoted term"),
-    ("fof(x, axiom, p(a), unknown, [$tff(p)]).",   "$tff(...) in an annotation, for a TFF parser"),
-    ("fof(x, axiom, p(a), unknown, [$thf(p)]).",   "$thf(...) in an annotation, for a THF parser"),
 
     # Groundings are looked up by name, so a name can only have one arity
     ("fof(x, axiom, p(a) & p(a, b)).",             "predicate with two arities"),
@@ -736,6 +736,18 @@ def test_syntax_deep_nesting_is_refused(program):
 def test_syntax_include_needs_parse_file():
     with pytest.raises(NotImplementedError, match="parse_file"):
         tptp.parse("include('Axioms/SET001-0.ax').")
+
+
+def test_syntax_refused_in_a_statement_formula_is_raised():
+    # $tff/$thf only appear in annotations, which are ignored. If a Refused node somehow became
+    # the formula of a statement, Problem._collect (and free_vars) must still raise its error.
+    from ltn.parser.tree import Problem, Refused, Statement
+
+    error = NotImplementedError(
+        "$tff(...) at line 1 is not supported, only $fof(...) and $cnf(...)."
+    )
+    with pytest.raises(NotImplementedError, match=r"\$tff"):
+        Problem([Statement("t", "axiom", Refused(error))], tptp.parse_formula)
 
 
 # 2. Values
