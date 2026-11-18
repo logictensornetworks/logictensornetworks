@@ -805,6 +805,21 @@ def test_value_includes_the_implicit_axiom_that_values_differ():
     assert [float(read(program).sat())] == values_of(expected)
 
 
+def test_distinct_values_work_with_from_logits_equality():
+    # The implicit inequality axiom must call equality through Predicate.__call__, so a
+    # FromLogits replacement (list-of-inputs logits model) still works.
+    class EqLogits(tf.keras.Model):
+        def call(self, inputs):
+            left, right = inputs
+            return -tf.reduce_sum(tf.square(left - right), axis=1, keepdims=True)
+
+    grounding = Grounding(tptp.parse("fof(test, axiom, p(1) & p(2))."), embedding_size=1)
+    grounding.predicates["="] = ltn.Predicate.FromLogits(
+        EqLogits(), activation_function="sigmoid", with_class_indexing=False
+    )
+    assert 0.0 < float(grounding.sat()) < 1.0
+
+
 def test_value_of_a_long_chain():
     # $true leaves a conjunction unchanged, so the value depends on the last operand being there.
     program = "fof(test, axiom, " + " & ".join(["$true"] * 2000 + ["p(a)"]) + ")."

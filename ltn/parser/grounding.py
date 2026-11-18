@@ -296,10 +296,12 @@ class Grounding:
         if len(names) < 2:
             return None
         k = len(names)
-        values = tf.stack([self.constants[name].tensor for name in names])
-        pairs = [tf.repeat(values, k, axis=0), tf.tile(values, [k, 1])]
-        equal = tf.reshape(self.predicates["="].model(pairs, training=training), [k, k])
-        unequal = tf.boolean_mask(1.0 - equal, tf.logical_not(tf.eye(k, dtype=tf.bool)))
+        constants = [self.constants[name] for name in names]
+        # Variables, so equality goes through Predicate.__call__ (needed for FromLogits).
+        u = ltn.Variable("u", tf.stack([c.tensor for c in constants]))
+        v = ltn.Variable("v", tf.stack([c.tensor for c in constants]))
+        equal = self._apply(self.predicates["="], [u, v], training)
+        unequal = tf.boolean_mask(1.0 - equal.tensor, tf.logical_not(tf.eye(k, dtype=tf.bool)))
         return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
 
     def _variable(
