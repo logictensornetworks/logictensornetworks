@@ -217,7 +217,8 @@ def _value(name: str):
     """TPTP interprets numbers and distinct objects as themselves. Numbers are equal if their values
     are, so 1/2 = 0.5, and a number is never equal to a distinct object."""
     if name.startswith('"'):
-        return "distinct object", name
+        # Strip the quotes and unescape \" and \\, like include() does for single-quoted paths.
+        return "distinct object", re.sub(r'\\(["\\])', r"\1", name[1:-1])
     if name[0] in "+-0123456789":
         return "number", fractions.Fraction(name)
     return None

@@ -753,6 +753,17 @@ def test_syntax_refused_in_a_statement_formula_is_raised():
 # 2. Values
 
 
+def test_distinct_object_value_is_unescaped():
+    # The lexer token keeps quotes and escapes; the interpreted value is the character sequence.
+    problem = tptp.parse(r'fof(t, axiom, p("a\"b") & p("c\\d") & p("Apple")).')
+    assert problem.values[r'"a\"b"'] == ("distinct object", 'a"b')
+    assert problem.values[r'"c\\d"'] == ("distinct object", "c\\d")
+    assert problem.values['"Apple"'] == ("distinct object", "Apple")
+    # The tag stops a distinct object from unifying with a number written the same way.
+    assert tptp._value('"1"') == ("distinct object", "1")
+    assert tptp._value('"1"') != tptp._value("1")
+
+
 @pytest.mark.parametrize("name", PROGRAMS)
 def test_value_matches_core_definition(name):
     program, core = PROGRAMS[name]
