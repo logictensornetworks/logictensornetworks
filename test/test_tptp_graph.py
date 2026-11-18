@@ -615,6 +615,22 @@ def test_kept_graph_is_rebuilt_for_other_statements():
     assert len(traces) == rebuilt
 
 
+def test_kept_graph_reuses_default_axioms_passed_explicitly():
+    # statements=None and the axiom-role list that sat() uses are the same formulas.
+    from ltn.parser.tree import AXIOM_ROLES
+
+    problem = tptp.parse("fof(fact, axiom, p(a)).\nfof(goal, conjecture, q(b)).")
+    grounding = Grounding(problem, embedding_size=SIZE)
+    traces = count_traces(grounding)
+    optimizer = tf.keras.optimizers.Adam(0.01)
+    grounding.train(1, optimizer, reuse_graph=True)
+    built = len(traces)
+    axioms = problem.with_role(*AXIOM_ROLES)
+    grounding.train(1, reuse_graph=True, statements=axioms)
+    assert len(traces) == built
+    assert int(optimizer.iterations) == 2
+
+
 # --------------------------------------------------------------------------------------- The README
 
 

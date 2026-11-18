@@ -221,7 +221,8 @@ class Grounding:
         if steps < 1:  # nothing to train
             return float(self.sat(statements))
         kept_step, kept_optimizer, kept_statements = getattr(self, "_kept_step", (None, None, None))
-        key = None if statements is None else tuple(statements)
+        # None means the same axiom-role list that sat() uses; compare the resolved statements.
+        key = tuple(statements if statements is not None else self.problem.with_role(*AXIOM_ROLES))
         if reuse_graph and key == kept_statements:
             optimizer = optimizer or kept_optimizer
         optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
