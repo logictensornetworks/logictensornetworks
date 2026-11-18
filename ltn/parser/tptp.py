@@ -147,10 +147,14 @@ class _SyntaxTree(lark.Transformer):
     def fof_infix_unary(self, left, right) -> Not:
         return Not(Atom("=", (left, right)))
 
-    def true_formula(self) -> Truth:
+    def true_formula(self, word, *args) -> Truth:
+        if args:
+            raise SyntaxError(f"{word} at line {word.line} takes no arguments.")
         return Truth(True)
 
-    def false_formula(self) -> Truth:
+    def false_formula(self, word, *args) -> Truth:
+        if args:
+            raise SyntaxError(f"{word} at line {word.line} takes no arguments.")
         return Truth(False)
 
     def fof_plain_term(self, functor, *args) -> Fn:

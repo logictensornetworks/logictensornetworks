@@ -51,9 +51,11 @@ fof_variable_list: UPPER_WORD ("," UPPER_WORD)*
 
 ?fof_atomic_formula: fof_plain_term        -> fof_plain_atomic_formula
                    | fof_term "=" fof_term -> fof_defined_infix_formula
-                   | "$true"               -> true_formula
-                   | "$false"              -> false_formula
+                   | true_formula
+                   | false_formula
                    | fof_unsupported_term
+!true_formula: "$true" ("(" _fof_arguments ")")?
+!false_formula: "$false" ("(" _fof_arguments ")")?
 
 // Terms
 ?fof_term: fof_plain_term

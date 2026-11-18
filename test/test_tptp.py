@@ -534,6 +534,8 @@ NOT_TPTP = [
     ('fof(x, axiom, "p").',                        "a distinct object is not a formula"),
     ("fof(x, axiom, p(a & b)).",                   "a formula is not a term"),
     ("fof(x, axiom, p($true)).",                   "$true is not a term"),
+    ("fof(x, axiom, $true(a)).",                   "$true takes no arguments"),
+    ("fof(x, axiom, $false(a)).",                  "$false takes no arguments"),
     ("fof(x, axiom, a = b = c).",                  "= is not associative"),
     ("fof(x, axiom, a =).",                        "= without a right operand"),
 
@@ -736,6 +738,18 @@ def test_syntax_deep_nesting_is_refused(program):
 def test_syntax_include_needs_parse_file():
     with pytest.raises(NotImplementedError, match="parse_file"):
         tptp.parse("include('Axioms/SET001-0.ax').")
+
+
+@pytest.mark.parametrize(
+    "program, message",
+    [
+        ("fof(x, axiom, $true(a)).", r"\$true at line 1 takes no arguments"),
+        ("fof(x, axiom, $false(a, b)).", r"\$false at line 1 takes no arguments"),
+    ],
+)
+def test_syntax_true_and_false_take_no_arguments(program, message):
+    with pytest.raises(SyntaxError, match=message):
+        tptp.parse(program)
 
 
 def test_syntax_refused_in_a_statement_formula_is_raised():
