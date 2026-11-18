@@ -291,6 +291,8 @@ class Grounding:
         individuals with different values, they are not equal. None if there are fewer than two."""
         names, seen = [], set()
         for name, value in self.problem.values.items():
+            if name not in self.constants:
+                continue  # query-only values have no embedding to keep apart
             if value not in seen:  # one name for each value, the one that has the grounding
                 seen.add(value)
                 names.append(name)
@@ -324,15 +326,16 @@ class Grounding:
             return ltn.Variable.from_constants(label, individuals)
 
     def _value_of(self, name: str) -> object | None:
-        """The value a syntax gives to a constant, or None if it is not interpreted as itself."""
+        """The value a syntax gives to a constant, or None if it is not interpreted as itself.
+
+        Does not write into `problem.values`: a query may mention a number the statements never
+        did, and those must not join the implicit distinct-values axiom (they have no embedding).
+        """
         if name in self.problem.values:
             return self.problem.values[name]
         if self.problem.interpret is None:
             return None
-        value = self.problem.interpret(name)
-        if value is not None:
-            self.problem.values[name] = value
-        return value
+        return self.problem.interpret(name)
 
     @staticmethod
     def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:

@@ -811,6 +811,15 @@ def test_query_equality_of_values_absent_from_the_problem(program, query, expect
     assert float(grounding.evaluate(query).tensor) == expected
 
 
+def test_query_equality_does_not_pollute_sat_with_missing_embeddings():
+    # A query may interpret 2 without ever giving it a constant. That must not make sat() look
+    # up an embedding for 2 in the distinct-values axiom.
+    grounding = Grounding(tptp.parse("fof(test, axiom, p(1))."))
+    assert float(grounding.evaluate("1 = 2").tensor) == 0.0
+    assert "2" not in grounding.problem.values
+    assert float(grounding.sat()) > 0.0
+
+
 @pytest.mark.parametrize(
     "query, message",
     [
