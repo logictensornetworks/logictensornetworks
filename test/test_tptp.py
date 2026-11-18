@@ -845,6 +845,13 @@ def test_value_with_a_binary_function_term():
     assert values_read_from(program, herbrand_depth=1) == values_of(Forall(u, Q(G([u, a]))))
 
 
+def test_herbrand_individuals_ignore_extra_function_groundings():
+    # A grounding for a symbol that is not in the problem must not break the Herbrand expansion.
+    grounding = Grounding(tptp.parse("fof(test, axiom, p(f(a)))."), herbrand_depth=1)
+    grounding.functions["h"] = ltn.Function.Lambda(lambda u: u)
+    assert len(grounding.individuals()) == 2  # a and f(a)
+
+
 # 3. Files. tptp.parse_file reads a file and puts the statements of each included file in place of
 # its include, as if they were pasted there.
 

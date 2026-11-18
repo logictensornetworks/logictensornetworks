@@ -124,8 +124,11 @@ class Grounding:
         terms = {Fn(c): self.constants[c] for c in self.domain}
         for _ in range(self.herbrand_depth):
             new = {}
-            for f, function in self.functions.items():
-                for args in itertools.product(list(terms), repeat=self.problem.functions[f]):
+            for f, arity in self.problem.functions.items():
+                if arity == 0:
+                    continue
+                function = self.functions[f]
+                for args in itertools.product(list(terms), repeat=arity):
                     if Fn(f, args) not in terms:
                         new[Fn(f, args)] = self._apply(function, [terms[a] for a in args], training)
             terms.update(new)
