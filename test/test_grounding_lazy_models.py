@@ -133,13 +133,13 @@ class _NestedLazyModel(tf.keras.Model):
         )
         self.blocks = {"ready": [self.ready], "lazy": [self.lazy]}
 
-    def build(self, input_shape: tf.TensorShape) -> None:
+    def build(self, input_shape: list[tf.TensorShape]) -> None:
         # The ready branch is built in __init__; the other branch remains unused.
         super().build(input_shape)
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
-        # The unused branch stays lazy even after the containing model has been called.
-        return self.ready(inputs) + self.offset
+    def call(self, inputs: list[tf.Tensor]) -> tf.Tensor:
+        # FromLogits supplies a list; the other branch deliberately stays lazy.
+        return self.ready(inputs[0]) + self.offset
 
 
 class TestNestedLazyModels(unittest.TestCase):
