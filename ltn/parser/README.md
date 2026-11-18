@@ -28,9 +28,9 @@ This prints a truth value close to 1, for example `0.9999988079071045`. The grou
 
 `grounding.train()` calls models in training mode, so custom Dropout and BatchNormalization layers behave as they do during Keras training. Evaluation, `sat()`, and refutation use inference mode; pass `training=True` to `evaluate()` or `sat()` when building your own training loop.
 
-`grounding.sat()` aggregates the axioms into one truth value, which is 1 for a problem without axioms, and `grounding.train()` maximizes it. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not axioms. To train on every clause, pass `statements=problem.statements`.
+`grounding.sat()` aggregates the axioms into one truth value. It includes the implicit axiom that different values are unequal, and it is 1 if there is nothing to satisfy. `grounding.train()` maximizes it. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not axioms. To train on every clause, pass `statements=problem.statements`.
 
-TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. `sat()` also includes the implicit axiom that different values are unequal, so that training keeps them apart.
+TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. The implicit axiom applies whenever there are at least two such values, even if they only appear in conjectures, so that training keeps them apart.
 
 LTN evaluates a formula on every combination of the individuals that its variables range over, so a formula with v variables over n individuals builds a tensor with n^v entries. Problems with many constants and variables can run out of memory: about a third of the problems in the TPTP library would need more than a million entries.
 
