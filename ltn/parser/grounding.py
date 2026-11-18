@@ -414,8 +414,18 @@ class Grounding:
             return env[f.name]
         if isinstance(f, Fn):
             if not f.args:
-                self._check(self.constants, self.problem.functions, f.name, 0, "constant")
-                return self.constants[f.name]
+                name = f.name
+                if (
+                    f.value is not None
+                    and name not in self.constants
+                    and name not in self.problem.functions
+                ):
+                    name = next(
+                        (alias for alias, value in self.problem.values.items() if value == f.value),
+                        name,
+                    )
+                self._check(self.constants, self.problem.functions, name, 0, "constant")
+                return self.constants[name]
             self._check(self.functions, self.problem.functions, f.name, len(f.args), "function")
             return self._apply(self.functions[f.name], [recurse(a) for a in f.args], training)
         if isinstance(f, Atom):
@@ -424,7 +434,9 @@ class Grounding:
                 return self.propositions[f.pred]
             if f.pred == "=":
                 values = [
-                    self.problem.values.get(a.name) if isinstance(a, Fn) and not a.args else None
+                    (a.value if a.value is not None else self.problem.values.get(a.name))
+                    if isinstance(a, Fn) and not a.args
+                    else None
                     for a in f.args
                 ]
                 if None not in values:  # both are interpreted as themselves

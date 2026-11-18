@@ -25,10 +25,11 @@ class Var:
 
 @dataclasses.dataclass(frozen=True)
 class Fn:
-    """Function term. A constant is a function without arguments."""
+    """A constant is a function without arguments; `value` holds a literal's interpreted value."""
 
     name: str
     args: tuple = ()
+    value: object | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -109,7 +110,7 @@ class Problem:
 
     `values` holds the constants that a syntax interprets as themselves, such as TPTP's numbers and
     distinct objects. Two of them are the same individual if their values are equal, and different
-    individuals otherwise. The syntax fills it in."""
+    individuals otherwise. Collected from `Fn.value`, or supplied by the syntax."""
 
     statements: list[Statement]
     parse_formula: Callable[[str], object]
@@ -127,6 +128,8 @@ class Problem:
             name = f.pred if isinstance(f, Atom) else f.name
             if name != "=" and table.setdefault(name, len(f.args)) != len(f.args):
                 raise NotImplementedError(f"Symbol {name} is used with different arities.")
+            if isinstance(f, Fn) and not f.args and f.value is not None:
+                self.values[name] = f.value
             for arg in f.args:
                 self._collect(arg)
         elif isinstance(f, Not):

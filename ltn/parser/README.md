@@ -38,6 +38,8 @@ For a custom training loop, `grounding.trainable_variables` collects the trainab
 
 TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. These comparisons also work in queries when the literals do not occur in the problem, without adding individuals to the domain. Other uses of a literal, such as `p(2)`, still need a grounding for it.
 
+Queries reuse existing numeric groundings by value: if the problem contains `p(1)`, queries such as `p(1.0)` and `p(2/2)` use the same `Constant`, without adding names or individuals to the problem. A query such as `p(2)` still fails unless that value has a grounding.
+
 Equal values such as `1` and `1.0` share one `Constant`. To change their grounding, assign to the shared tensor or replace every alias with the same `Constant` object. Replacing only one alias with a different object raises `ValueError` when the grounding is used.
 
 `sat()` includes the implicit axiom that different interpreted values in the problem are unequal, so that training keeps them apart. This applies even when those values occur only in conjectures, so a problem without explicit axioms can have satisfaction below 1.
@@ -70,4 +72,4 @@ Each syntax only has to turn text into the syntax tree:
 - `grounding.py` -- turns a syntax tree into LTN objects, whatever syntax it was read from,
 - `tptp.py` and `tptp.lark` -- the TPTP parser and its grammar.
 
-To add a syntax, add a module with a `parse(text)` function that returns a `Problem`, and a function that reads a single formula, which `Grounding` uses for queries given as text. If the syntax has constants that it interprets as themselves, like TPTP's numbers, put their values in `Problem.values`. Don't import it from `ltn/parser/__init__.py`, so that only people who use it need its dependencies.
+To add a syntax, add a module with a `parse(text)` function that returns a `Problem`, and a function that reads a single formula, which `Grounding` uses for queries given as text. If the syntax has constants that it interprets as themselves, like TPTP's numbers, set their `Fn.value`. `Problem` collects these in `Problem.values`, and queries can resolve other spellings of the same value. Don't import it from `ltn/parser/__init__.py`, so that only people who use it need its dependencies.

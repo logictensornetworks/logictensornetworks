@@ -155,7 +155,8 @@ class _SyntaxTree(lark.Transformer):
         return Fn(functor, args)
 
     def defined_term(self, word) -> Fn:
-        return Fn(str(word))
+        name = str(word)
+        return Fn(name, value=_value(name))
 
     def variable(self, word) -> Var:
         return Var(str(word))
@@ -221,15 +222,6 @@ def _value(name: str):
     return None
 
 
-def _problem(statements: list[Statement]) -> Problem:
-    problem = Problem(statements, parse_formula)
-    for name, arity in problem.functions.items():
-        value = _value(name) if arity == 0 else None
-        if value is not None:
-            problem.values[name] = value
-    return problem
-
-
 def parse(text: str) -> Problem:
     """Reads TPTP text. Raises SyntaxError if it is not valid TPTP, and NotImplementedError if it
     is valid TPTP that the reader doesn't support. That includes `include`, which needs
@@ -241,7 +233,7 @@ def parse(text: str) -> Problem:
                 f"include(...) at line {item.line} needs the file it names: "
                 f"read the problem with tptp.parse_file."
             )
-    return _guarded(lambda: _problem(items))
+    return _guarded(lambda: Problem(items, parse_formula))
 
 
 def parse_file(path, root=None) -> Problem:
@@ -253,7 +245,7 @@ def parse_file(path, root=None) -> Problem:
     if root is None:
         root = os.environ.get("TPTP")
     statements = _guarded(lambda: _statements(pathlib.Path(path).resolve(), root, {}, ()))
-    return _guarded(lambda: _problem(statements))
+    return _guarded(lambda: Problem(statements, parse_formula))
 
 
 def _statements(path: pathlib.Path, root, cache: dict, including: tuple) -> list[Statement]:

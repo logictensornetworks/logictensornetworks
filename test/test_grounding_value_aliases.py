@@ -3,6 +3,7 @@
 import unittest
 
 import pytest
+import tensorflow as tf
 
 import ltn
 
@@ -17,6 +18,79 @@ def _grounding() -> Grounding:
 
 
 class TestInterpretedValueAliases(unittest.TestCase):
+    def test_queries_reuse_numeric_values_without_adding_constants(self) -> None:
+        for name, aliases in (
+            ("1", ("1.0", "+1", "2/2", "1E0")),
+            ("1/2", ("0.5", "+2/4", "5E-1")),
+            ("-1", ("-1.0", "-2/2")),
+            ("0", ("-0.0", "+0/1")),
+        ):
+            with self.subTest(name=name):
+                problem = tptp.parse(f"fof(fact, axiom, p(f({name}))).")
+                grounding = Grounding(problem, embedding_size=1)
+                grounding.constants[name].tensor.assign([0.25])
+                grounding.functions["f"] = ltn.Function.Lambda(lambda value: value + 0.125)
+                grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: value[:, 0])
+                functions, values = dict(problem.functions), dict(problem.values)
+                constants, domain = dict(grounding.constants), list(grounding.domain)
+                parameters = [id(p) for p in grounding.trainable_variables]
+
+                for alias in aliases:
+                    with self.subTest(alias=alias):
+                        query = f"p(f({alias}))"
+                        for formula in (query, tptp.parse_formula(query)):
+                            self.assertEqual(float(grounding.evaluate(formula).tensor), 0.375)
+                        self.assertEqual(
+                            float(tf.function(lambda: grounding.evaluate(query).tensor)()), 0.375
+                        )
+
+                self.assertEqual(problem.functions, functions)
+                self.assertEqual(problem.values, values)
+                self.assertEqual(grounding.constants, constants)
+                self.assertEqual(grounding.domain, domain)
+                self.assertEqual([id(p) for p in grounding.trainable_variables], parameters)
+
+                grounding.constants[name] = ltn.Constant([0.75], trainable=False)
+                self.assertEqual(float(grounding.evaluate(f"p({aliases[0]})").tensor), 0.75)
+
+    def test_query_aliases_work_in_quantifiers_and_mixed_equalities(self) -> None:
+        grounding = Grounding(tptp.parse("fof(fact, axiom, 1 = a)."), embedding_size=1)
+        grounding.constants["1"].tensor.assign([0.25])
+        grounding.constants["a"].tensor.assign([0.75])
+        for query, reference in (
+            ("2/2 = a", "1 = a"),
+            ("a != 1.0", "a != 1"),
+            ("! [X] : X = 1E0", "! [X] : X = 1"),
+        ):
+            with self.subTest(query=query):
+                expected = float(grounding.evaluate(reference).tensor)
+                self.assertAlmostEqual(float(grounding.evaluate(query).tensor), expected)
+                self.assertAlmostEqual(
+                    float(tf.function(lambda: grounding.evaluate(query).tensor)()), expected
+                )
+
+    def test_query_aliases_preserve_gradients_and_refutation_updates(self) -> None:
+        results = []
+        for query in ("p(1)", "p(2/2)"):
+            grounding = Grounding(tptp.parse("fof(fact, axiom, p(1))."), embedding_size=1)
+            parameter = grounding.constants["1"].tensor
+            parameter.assign([0.25])
+            grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: tf.sigmoid(value[:, 0]))
+            with tf.GradientTape() as tape:
+                truth = grounding.evaluate(query, tape=tape).tensor
+            gradient = tape.gradient(truth, parameter)
+            self.assertIsNotNone(gradient)
+            sat, truth = grounding.refute(query, steps=2, optimizer=tf.keras.optimizers.SGD(0.05))
+            results.append((float(gradient[0]), sat, truth, float(parameter[0])))
+        for actual, expected in zip(*results, strict=True):
+            self.assertAlmostEqual(actual, expected)
+
+    def test_query_aliases_do_not_ground_other_values_or_quoted_names(self) -> None:
+        grounding = Grounding(tptp.parse("fof(fact, axiom, p(1))."))
+        for term in ("2", "0.5", "'1'", '"1"'):
+            with self.subTest(term=term), self.assertRaisesRegex(ValueError, "not a constant"):
+                grounding.evaluate(f"p({term})")
+
     def test_replacing_one_alias_cannot_satisfy_a_contradiction(self) -> None:
         for name in ("1", "1.0"):
             with self.subTest(replaced=name):
