@@ -308,6 +308,10 @@ class Grounding:
         self, label: str, individuals: list[ltn.core.Term], tape: tf.GradientTape | None
     ) -> ltn.Variable:
         if not individuals:
+            if self.domain:
+                raise ValueError(
+                    "Variables have nothing to range over: the individuals list is empty."
+                )
             raise ValueError(
                 "Variables have nothing to range over, because the problem has no constants. "
                 "Pass extra_individuals=1 or more to Grounding, or fill its domain."
@@ -333,6 +337,8 @@ class Grounding:
     def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:
         """A clear error for a symbol that a query uses wrongly, instead of a KeyError."""
         if name not in groundings:
+            if name in arities:
+                raise ValueError(f"The {kind} {name} has no grounding.")
             raise ValueError(f"{name} is not a {kind} of the problem.")
         if arities.get(name, arity) != arity:
             expected = arities[name]
@@ -349,16 +355,18 @@ class Grounding:
     def _eval(self, f, env: dict, make_variable, training: bool):
         recurse = lambda g: self._eval(g, env, make_variable, training)
         if isinstance(f, Var):
+            if f.name not in env:
+                raise ValueError(f"Free variable {f.name} is not bound.")
             return env[f.name]
         if isinstance(f, Fn):
             if not f.args:
-                self._check(self.constants, {}, f.name, 0, "constant")
+                self._check(self.constants, self.problem.functions, f.name, 0, "constant")
                 return self.constants[f.name]
             self._check(self.functions, self.problem.functions, f.name, len(f.args), "function")
             return self._apply(self.functions[f.name], [recurse(a) for a in f.args], training)
         if isinstance(f, Atom):
             if not f.args:
-                self._check(self.propositions, {}, f.pred, 0, "proposition")
+                self._check(self.propositions, self.problem.predicates, f.pred, 0, "proposition")
                 return self.propositions[f.pred]
             if f.pred == "=":
                 values = [

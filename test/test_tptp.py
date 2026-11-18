@@ -791,6 +791,28 @@ def test_query_with_a_symbol_the_problem_lacks_is_rejected(query, message):
         grounding.evaluate(query)
 
 
+def test_empty_individuals_mentions_the_list_when_the_domain_is_not_empty():
+    grounding = Grounding(tptp.parse("fof(test, axiom, ! [X] : p(a))."))
+    assert grounding.domain == ["a"]
+    with pytest.raises(ValueError, match="individuals list is empty"):
+        grounding.evaluate("! [X] : p(X)", individuals=[])
+
+
+def test_missing_function_grounding_is_not_confused_with_a_missing_symbol():
+    grounding = Grounding(tptp.parse("fof(test, axiom, p(f(a)))."))
+    del grounding.functions["f"]
+    with pytest.raises(ValueError, match="has no grounding"):
+        grounding.evaluate("p(f(a))")
+
+
+def test_open_formula_tree_reports_free_variables():
+    from ltn.parser.tree import Atom, Var
+
+    grounding = Grounding(tptp.parse("fof(test, axiom, p(a))."))
+    with pytest.raises(ValueError, match="Free variable X"):
+        grounding.evaluate(Atom("p", (Var("X"),)))
+
+
 def test_value_without_axioms_is_one():
     # A conjecture is not an axiom, and no axioms are all satisfied.
     assert [float(read("fof(test, conjecture, p(a)).").sat())] == values_of(TRUE)
