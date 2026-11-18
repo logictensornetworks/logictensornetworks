@@ -222,7 +222,7 @@ def _value(name: str):
 
 
 def _problem(statements: list[Statement]) -> Problem:
-    problem = Problem(statements, parse_formula)
+    problem = Problem(statements, parse_formula, interpret=_value)
     for name, arity in problem.functions.items():
         value = _value(name) if arity == 0 else None
         if value is not None:

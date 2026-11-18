@@ -108,13 +108,15 @@ class Problem:
 
     `values` holds the constants that a syntax interprets as themselves, such as TPTP's numbers and
     distinct objects. Two of them are the same individual if their values are equal, and different
-    individuals otherwise. The syntax fills it in."""
+    individuals otherwise. The syntax fills it in. `interpret`, when set, reads the value of a
+    constant that a query uses but that the statements never mentioned."""
 
     statements: list[Statement]
     parse_formula: Callable[[str], object]
     predicates: dict[str, int] = dataclasses.field(default_factory=dict)
     functions: dict[str, int] = dataclasses.field(default_factory=dict)
     values: dict[str, object] = dataclasses.field(default_factory=dict)
+    interpret: Callable[[str], object | None] | None = None
 
     def __post_init__(self) -> None:
         for statement in self.statements:

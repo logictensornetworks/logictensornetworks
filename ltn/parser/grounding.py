@@ -313,6 +313,17 @@ class Grounding:
             warnings.simplefilter("ignore")
             return ltn.Variable.from_constants(label, individuals)
 
+    def _value_of(self, name: str) -> object | None:
+        """The value a syntax gives to a constant, or None if it is not interpreted as itself."""
+        if name in self.problem.values:
+            return self.problem.values[name]
+        if self.problem.interpret is None:
+            return None
+        value = self.problem.interpret(name)
+        if value is not None:
+            self.problem.values[name] = value
+        return value
+
     @staticmethod
     def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:
         """A clear error for a symbol that a query uses wrongly, instead of a KeyError."""
@@ -346,7 +357,7 @@ class Grounding:
                 return self.propositions[f.pred]
             if f.pred == "=":
                 values = [
-                    self.problem.values.get(a.name) if isinstance(a, Fn) and not a.args else None
+                    self._value_of(a.name) if isinstance(a, Fn) and not a.args else None
                     for a in f.args
                 ]
                 if None not in values:  # both are interpreted as themselves

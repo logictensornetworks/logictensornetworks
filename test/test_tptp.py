@@ -759,6 +759,22 @@ def test_value_of_a_query():
 
 
 @pytest.mark.parametrize(
+    "program, query, expected",
+    [
+        ("fof(test, axiom, p(a)).", "2 = 2", 1.0),
+        ("fof(test, axiom, p(1)).", "1 = 2", 0.0),
+        ("fof(test, axiom, p(a)).", '"a" = "a"', 1.0),
+        ("fof(test, axiom, p(a)).", '"a" = "b"', 0.0),
+    ],
+)
+def test_query_equality_of_values_absent_from_the_problem(program, query, expected):
+    # Numbers and distinct objects are interpreted as themselves even when a query is the
+    # first place they appear, so their equality does not need an embedding.
+    grounding = Grounding(tptp.parse(program))
+    assert float(grounding.evaluate(query).tensor) == expected
+
+
+@pytest.mark.parametrize(
     "query, message",
     [
         ("z(a)", "z is not a predicate"),
