@@ -8,7 +8,11 @@ pip install ltn[parser]
 
 ## TPTP
 
-[TPTP](https://tptp.org) is a library of problems for theorem provers, and the text format they are written in. `ltn.parser.tptp` reads its FOF and CNF languages:
+[TPTP](https://tptp.org) is a library of problems for theorem provers, and the text format they are written in. `ltn.parser.tptp` reads its FOF and CNF languages. Evaluation uses fuzzy LTN semantics over a finite grounding domain; high satisfaction is not a classical theorem-proving certificate.
+
+The [companion tutorial](../../tutorials/5-parser_and_tptp.ipynb) compares native and parsed formulas using the same custom groundings, then demonstrates training, queries and refutation.
+
+For a small problem:
 
 ```python
 from ltn.parser import Grounding, tptp
@@ -26,6 +30,8 @@ This prints a truth value close to 1, for example `0.9999988079071045`. The grou
 
 `Grounding` gives every symbol a default: constants are trainable embeddings, functions and predicates are MLPs, and propositions are trainable truth values. Replace any of them before training, for example with `grounding.predicates["man"] = ...`. Variables range over the constants of the problem, and also over function terms with `Grounding(problem, herbrand_depth=1)`. If a problem has no constants, give its variables something to range over with `Grounding(problem, extra_individuals=1)` or more.
 
+Every quantified variable uses the same domain, including constants occurring only in conjectures. This differs from native LTN variables with separate domains, such as samples and labels. Textual formulas have no direct equivalent of `ltn.diag`, guarded quantification with `mask=`, or per-call quantifier `p=` and `stable=` overrides. The shared operator objects can be replaced before training. Queries must be closed formulas: use `! [X] : p(X)` rather than `p(X)`.
+
 To add a new function when using Herbrand expansion, set both its grounding in `grounding.functions` and its arity in `problem.functions`. Replacing the grounding of an existing function uses its declared arity.
 
 Herbrand terms are evaluated only when a quantified variable needs the domain. Ground formulas and empty axiom selections do not call functions merely to construct unused individuals.
@@ -36,11 +42,17 @@ For a custom training loop, `grounding.trainable_variables` collects the trainab
 
 `grounding.sat()` aggregates the explicit axioms and the implicit distinctness constraint described below into one truth value, and `grounding.train()` maximizes it. It returns 1 when neither contributes a constraint. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not explicit axioms. To train on every clause, pass `statements=problem.statements`.
 
+`grounding.refute(formula, q=0.95)` searches for a grounding whose axiom satisfaction is at least `q` while the formula's truth value is below `q`. It changes the grounding and returns the final axiom satisfaction and formula truth value. Start from a fresh grounding: saturated models can have poor search gradients. A counterexample refutes the consequence for the configured LTN problem and threshold; an unsuccessful local search proves nothing.
+
+Ordinary equality, such as `a = b`, defaults to smooth similarity, `exp(-squared_distance(a, b))`, rather than a crisp identity test.
+
 TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. These comparisons also work in queries when the literals do not occur in the problem, without adding individuals to the domain. Other uses of a literal, such as `p(2)`, still need a grounding for it.
+
+The default embeddings of numeric literals encode their identities, not their magnitudes or numeric features: `p(2)` does not automatically receive `[2.0]`. Replace the constants and models when grounding actual numeric data. Defined arithmetic symbols such as `$less` and `$sum` are unsupported.
 
 Queries reuse existing numeric groundings by value: if the problem contains `p(1)`, queries such as `p(1.0)` and `p(2/2)` use the same `Constant`, without adding names or individuals to the problem. A query such as `p(2)` still fails unless that value has a grounding.
 
-Equal values such as `1` and `1.0` share one `Constant`. To change their grounding, assign to the shared tensor or replace every alias with the same `Constant` object. Replacing only one alias with a different object raises `ValueError` when the grounding is used.
+Equal values such as `1` and `1.0` share one `Constant`. To change their grounding, assign to the shared tensor or replace every alias with the same `Constant` object. Replacing only one alias with a different object raises `ValueError` when the grounding is used. This check also covers aliases added directly to `grounding.constants` and runs before cached training and refutation. Adding an alias does not add it to `problem.values` or the quantifier domain.
 
 `sat()` includes the implicit axiom that different interpreted values in the problem are unequal, so that training keeps them apart. This applies even when those values occur only in conjectures, so a problem without explicit axioms can have satisfaction below 1.
 
@@ -72,4 +84,4 @@ Each syntax only has to turn text into the syntax tree:
 - `grounding.py` -- turns a syntax tree into LTN objects, whatever syntax it was read from,
 - `tptp.py` and `tptp.lark` -- the TPTP parser and its grammar.
 
-To add a syntax, add a module with a `parse(text)` function that returns a `Problem`, and a function that reads a single formula, which `Grounding` uses for queries given as text. If the syntax has constants that it interprets as themselves, like TPTP's numbers, set their `Fn.value`. `Problem` collects these in `Problem.values`, and queries can resolve other spellings of the same value. Don't import it from `ltn/parser/__init__.py`, so that only people who use it need its dependencies.
+To add a syntax, add a module with a `parse(text)` function that returns a `Problem`, and a function that reads a single formula, which `Grounding` uses for queries given as text. If the syntax has constants that it interprets as themselves, like TPTP's numbers, set their `Fn.value`. `Problem` collects these in `Problem.values`, and queries can resolve other spellings of the same value. Also supply the optional `Problem.interpret_constant` callback to recognize interpreted aliases added directly to `grounding.constants`: given a valid constant name, it returns its interpreted value, or `None` for an uninterpreted name. This lets alias validation cover names outside the parsed problem without extending its domain. Don't import the syntax from `ltn/parser/__init__.py`, so that only people who use it need its dependencies.
