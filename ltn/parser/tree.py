@@ -110,13 +110,16 @@ class Problem:
 
     `values` holds the constants that a syntax interprets as themselves, such as TPTP's numbers and
     distinct objects. Two of them are the same individual if their values are equal, and different
-    individuals otherwise. Collected from `Fn.value`, or supplied by the syntax."""
+    individuals otherwise. Collected from `Fn.value`, or supplied by the syntax.
+    `interpret_constant`, if supplied, recognizes values of manually added grounding names;
+    it returns None for uninterpreted names."""
 
     statements: list[Statement]
     parse_formula: Callable[[str], object]
     predicates: dict[str, int] = dataclasses.field(default_factory=dict)
     functions: dict[str, int] = dataclasses.field(default_factory=dict)
     values: dict[str, object] = dataclasses.field(default_factory=dict)
+    interpret_constant: Callable[[str], object | None] | None = None
 
     def __post_init__(self) -> None:
         for statement in self.statements:

@@ -1,5 +1,7 @@
 """Equal interpreted values must remain one individual after replacing groundings."""
 
+import pathlib
+import tempfile
 import unittest
 
 import pytest
@@ -9,6 +11,7 @@ import ltn
 
 pytest.importorskip("lark")
 from ltn.parser import Grounding, tptp
+from ltn.parser.tree import Atom, Fn, Problem, Statement
 
 
 def _grounding() -> Grounding:
@@ -18,6 +21,132 @@ def _grounding() -> Grounding:
 
 
 class TestInterpretedValueAliases(unittest.TestCase):
+    def test_added_alias_cannot_split_an_existing_value(self) -> None:
+        for alias in ("1.0", "+1", "2/2", "1E0"):
+            with self.subTest(alias=alias):
+                grounding = Grounding(tptp.parse("fof(fact, axiom, p(1))."), embedding_size=1)
+                grounding.constants["1"].tensor.assign([1.0])
+                grounding.constants[alias] = ltn.Constant([0.0], trainable=True)
+                grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: value[:, 0])
+                operations = {
+                    "evaluate": lambda: grounding.evaluate(f"p(1) & ~ p({alias})"),
+                    "explicit individuals": lambda: grounding.evaluate("p(1)", individuals=[]),
+                    "sat": grounding.sat,
+                    "train": lambda: grounding.train(1),
+                    "zero-step train": lambda: grounding.train(0),
+                    "refute": lambda: grounding.refute("p(1)", steps=1),
+                    "zero-step refute": lambda: grounding.refute("p(1)", steps=0),
+                    "parameters": lambda: grounding.trainable_variables,
+                    "individuals": grounding.individuals,
+                }
+                for operation, call in operations.items():
+                    with (
+                        self.subTest(operation=operation),
+                        self.assertRaisesRegex(ValueError, "same interpreted value"),
+                    ):
+                        call()
+                self.assertEqual(float(grounding.constants["1"].tensor[0]), 1.0)
+                self.assertEqual(float(grounding.constants[alias].tensor[0]), 0.0)
+                self.assertEqual(set(grounding.problem.values), {"1"})
+                self.assertEqual(grounding.problem.functions, {"1": 0})
+                self.assertEqual(grounding.domain, ["1"])
+
+    def test_added_aliases_share_parameters_without_changing_the_problem(self) -> None:
+        grounding = Grounding(tptp.parse("fof(fact, axiom, p(1))."), embedding_size=1)
+        shared = grounding.constants["1"]
+        shared.tensor.assign([0.25])
+        grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: value[:, 0])
+        for alias in ("1.0", "+1", "2/2", "1E0"):
+            grounding.constants[alias] = shared
+        functions, values = dict(grounding.problem.functions), dict(grounding.problem.values)
+        constants, domain = dict(grounding.constants), list(grounding.domain)
+
+        for query in ("p(1.0)", "p(2/2)", "p(3/3)", "! [X] : p(X)"):
+            self.assertAlmostEqual(float(grounding.evaluate(query).tensor), 0.25, places=4)
+        self.assertEqual([id(p) for p in grounding.trainable_variables], [id(shared.tensor)])
+        self.assertEqual(grounding.individuals(), [shared])
+        self.assertEqual(grounding.problem.functions, functions)
+        self.assertEqual(grounding.problem.values, values)
+        self.assertEqual(grounding.constants, constants)
+        self.assertEqual(grounding.domain, domain)
+
+    def test_added_aliases_are_checked_before_reusing_a_training_graph(self) -> None:
+        for add_first in (False, True):
+            with self.subTest(add_first=add_first):
+                grounding = Grounding(tptp.parse("fof(fact, axiom, p(1))."), embedding_size=1)
+                grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: value[:, 0])
+                if add_first:
+                    grounding.constants["1.0"] = grounding.constants["1"]
+                optimizer = tf.keras.optimizers.SGD(0.0)
+                grounding.train(1, optimizer, reuse_graph=True)
+                grounding.constants["1.0"] = ltn.Constant([0.0], trainable=True)
+
+                with self.assertRaisesRegex(ValueError, "same interpreted value"):
+                    grounding.train(1, reuse_graph=True)
+                self.assertEqual(int(optimizer.iterations), 1)
+
+    def test_extra_values_are_checked_without_interpreting_custom_names(self) -> None:
+        grounding = Grounding(tptp.parse("fof(fact, axiom, p(1))."), embedding_size=1)
+        grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: value[:, 0])
+        for name in (
+            "",
+            "custom",
+            "01",
+            "1_0",
+            "1bad",
+            "+a",
+            "1/0",
+            "1 / 2",
+            " 1.0 ",
+            '"unclosed',
+            "'1'",
+            '"1"',
+        ):
+            grounding.constants[name] = ltn.Constant([0.75], trainable=False)
+            self.assertEqual(float(grounding.evaluate(Atom("p", (Fn(name),))).tensor), 0.75)
+        self.assertEqual(float(grounding.evaluate("p('1')").tensor), 0.75)
+        self.assertEqual(float(grounding.evaluate('p("1")').tensor), 0.75)
+
+        # Even two newly grounded spellings of a value absent from the problem must agree.
+        grounding.constants["2"] = ltn.Constant([0.25], trainable=False)
+        grounding.constants["2.0"] = ltn.Constant([0.75], trainable=False)
+        with self.assertRaisesRegex(ValueError, "same interpreted value"):
+            grounding.evaluate("p(2)")
+
+    def test_file_problems_also_validate_added_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "problem.p"
+            path.write_text("fof(fact, axiom, p(1)).", encoding="utf-8")
+            grounding = Grounding(tptp.parse_file(path))
+        grounding.constants["1.0"] = ltn.Constant([0.0], trainable=False)
+        with self.assertRaisesRegex(ValueError, "same interpreted value"):
+            grounding.individuals()
+
+    def test_other_syntaxes_can_interpret_added_constant_names(self) -> None:
+        problem = Problem(
+            [Statement("fact", "axiom", Atom("p", (Fn("one", value=1),)))],
+            lambda text: Atom("p", (Fn(text),)),
+            interpret_constant=lambda name: 1 if name == "uno" else None,
+        )
+        grounding = Grounding(problem, embedding_size=1)
+        grounding.constants["uno"] = ltn.Constant([0.0], trainable=False)
+        with self.assertRaisesRegex(ValueError, "same interpreted value"):
+            grounding.evaluate("uno")
+
+    def test_explicit_problem_values_work_without_a_name_interpreter(self) -> None:
+        problem = Problem(
+            [],
+            lambda name: Atom("p", (Fn(name),)),
+            predicates={"p": 1},
+            functions={"one": 0, "uno": 0},
+            values={"one": 1, "uno": 1},
+        )
+        grounding = Grounding(problem, embedding_size=1)
+        self.assertIs(grounding.constants["one"], grounding.constants["uno"])
+        grounding.constants["uno"] = ltn.Constant([0.0], trainable=False)
+        with self.assertRaisesRegex(ValueError, "same interpreted value"):
+            grounding.evaluate("uno")
+
     def test_queries_reuse_numeric_values_without_adding_constants(self) -> None:
         for name, aliases in (
             ("1", ("1.0", "+1", "2/2", "1E0")),

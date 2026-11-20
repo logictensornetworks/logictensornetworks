@@ -178,6 +178,8 @@ _parser = lark.Lark.open(
     start=["tptp_file", "fof_logic_formula"],
     transformer=_SyntaxTree(),
 )
+_NUMBER = re.compile(_parser.get_terminal("NUMBER").pattern.to_regexp())
+_DISTINCT_OBJECT = re.compile(_parser.get_terminal("DISTINCT_OBJECT").pattern.to_regexp())
 
 
 def _token_name(terminal: str) -> str:
@@ -214,10 +216,10 @@ def _guarded(action):
 
 def _value(name: str):
     """TPTP interprets numbers and distinct objects as themselves. Numbers are equal if their values
-    are, so 1/2 = 0.5, and a number is never equal to a distinct object."""
-    if name.startswith('"'):
+    are, so 1/2 = 0.5, and a number is never equal to a distinct object. Other names return None."""
+    if _DISTINCT_OBJECT.fullmatch(name):
         return "distinct object", name
-    if name[0] in "+-0123456789":
+    if _NUMBER.fullmatch(name):
         return "number", fractions.Fraction(name)
     return None
 
@@ -233,7 +235,7 @@ def parse(text: str) -> Problem:
                 f"include(...) at line {item.line} needs the file it names: "
                 f"read the problem with tptp.parse_file."
             )
-    return _guarded(lambda: Problem(items, parse_formula))
+    return _guarded(lambda: Problem(items, parse_formula, interpret_constant=_value))
 
 
 def parse_file(path, root=None) -> Problem:
@@ -245,7 +247,7 @@ def parse_file(path, root=None) -> Problem:
     if root is None:
         root = os.environ.get("TPTP")
     statements = _guarded(lambda: _statements(pathlib.Path(path).resolve(), root, {}, ()))
-    return _guarded(lambda: Problem(statements, parse_formula))
+    return _guarded(lambda: Problem(statements, parse_formula, interpret_constant=_value))
 
 
 def _statements(path: pathlib.Path, root, cache: dict, including: tuple) -> list[Statement]:

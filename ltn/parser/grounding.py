@@ -309,6 +309,7 @@ class Grounding:
         of the axioms and truth value of `formula`. This is a local search: a counterexample
         shows that `formula` is not a consequence, but a failed search proves nothing. Start
         from fresh groundings, since saturated predicates have vanishing gradients."""
+        self._check_value_aliases()
         if isinstance(formula, str):
             formula = self.problem.parse_formula(formula)
         if steps < 1:  # nothing to search
@@ -333,12 +334,17 @@ class Grounding:
         return float(self.sat()), float(self.evaluate(formula).tensor)
 
     def _check_value_aliases(self) -> None:
-        """Reject replacements that give equal interpreted values different groundings."""
+        """Reject replacements or added names that split one interpreted value's grounding."""
         by_value = {}
-        for name, value in self.problem.values.items():
-            if name not in self.constants:
-                continue  # Missing constants are reported when a formula or domain needs them.
-            constant = self.constants[name]
+        for name, constant in self.constants.items():
+            if name in self.problem.values:
+                value = self.problem.values[name]
+            elif self.problem.interpret_constant is not None:
+                value = self.problem.interpret_constant(name)
+                if value is None:
+                    continue
+            else:
+                continue
             if value in by_value:
                 other_name, other_constant = by_value[value]
                 if constant is not other_constant:
