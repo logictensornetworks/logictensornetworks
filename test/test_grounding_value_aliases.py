@@ -21,6 +21,73 @@ def _grounding() -> Grounding:
 
 
 class TestInterpretedValueAliases(unittest.TestCase):
+    def test_queries_resolve_alternate_spellings_of_newly_added_values(self) -> None:
+        for name, aliases in (
+            ("2", ("2.0", "4/2", "2E0")),
+            ("0.5", ("1/2", "+2/4", "5E-1")),
+            ("-1", ("-1.0", "-2/2")),
+            ("0", ("-0.0", "+0/1")),
+        ):
+            with self.subTest(name=name):
+                grounding = Grounding(tptp.parse("fof(fact, axiom, p(f(a)))."), embedding_size=1)
+                grounding.constants[name] = ltn.Constant([0.25], trainable=False)
+                grounding.functions["f"] = ltn.Function.Lambda(lambda value: value + 0.125)
+                grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: value[:, 0])
+                functions, values = (
+                    dict(grounding.problem.functions),
+                    dict(grounding.problem.values),
+                )
+                constants, domain = dict(grounding.constants), list(grounding.domain)
+                parameters = [id(p) for p in grounding.trainable_variables]
+
+                for alias in aliases:
+                    with self.subTest(alias=alias):
+                        query = f"p(f({alias}))"
+                        for formula in (query, tptp.parse_formula(query)):
+                            self.assertEqual(float(grounding.evaluate(formula).tensor), 0.375)
+                        self.assertEqual(
+                            float(tf.function(lambda: grounding.evaluate(query).tensor)()), 0.375
+                        )
+                for term in ("3", f"'{name}'", f'"{name}"'):
+                    with (
+                        self.subTest(ungrounded=term),
+                        self.assertRaisesRegex(ValueError, "not a constant"),
+                    ):
+                        grounding.evaluate(f"p({term})")
+                self.assertEqual(grounding.problem.functions, functions)
+                self.assertEqual(grounding.problem.values, values)
+                self.assertEqual(grounding.constants, constants)
+                self.assertEqual(grounding.domain, domain)
+                self.assertEqual([id(p) for p in grounding.trainable_variables], parameters)
+
+    def test_added_value_query_aliases_support_gradients_training_and_refutation(self) -> None:
+        results = []
+        for query in ("p(2)", "p(2.0)"):
+            grounding = Grounding(tptp.parse("fof(fact, axiom, p(a))."), embedding_size=1)
+            grounding.constants["a"] = ltn.Constant([1.0], trainable=False)
+            grounding.constants["2"] = ltn.Constant([0.25], trainable=True)
+            parameter = grounding.constants["2"].tensor
+            grounding.predicates["p"] = ltn.Predicate.Lambda(lambda value: tf.sigmoid(value[:, 0]))
+            with tf.GradientTape() as tape:
+                truth = grounding.evaluate(query, tape=tape).tensor
+            gradient = tape.gradient(truth, parameter)
+            self.assertIsNotNone(gradient)
+
+            chosen = tptp.parse(f"fof(chosen, axiom, {query}).").statements
+            optimizer = tf.keras.optimizers.SGD(0.05)
+            grounding.train(1, optimizer, reuse_graph=True, statements=chosen)
+            grounding.train(1, reuse_graph=True, statements=chosen)
+            trained = float(parameter[0])
+            self.assertGreater(trained, 0.25)
+            self.assertEqual(int(optimizer.iterations), 2)
+            sat, truth = grounding.refute(query, steps=2, optimizer=tf.keras.optimizers.SGD(0.05))
+            self.assertLess(float(parameter[0]), trained)
+            self.assertEqual(grounding.domain, ["a"])
+            self.assertEqual(grounding.problem.values, {})
+            results.append((float(gradient[0]), trained, sat, truth, float(parameter[0])))
+        for actual, expected in zip(*results, strict=True):
+            self.assertAlmostEqual(actual, expected)
+
     def test_added_alias_cannot_split_an_existing_value(self) -> None:
         for alias in ("1.0", "+1", "2/2", "1E0"):
             with self.subTest(alias=alias):

@@ -428,8 +428,16 @@ class Grounding:
                     and name not in self.constants
                     and name not in self.problem.functions
                 ):
+                    values = self.problem.values.items()
+                    if self.problem.interpret_constant is not None:
+                        added = (
+                            (alias, self.problem.interpret_constant(alias))
+                            for alias in self.constants
+                            if alias not in self.problem.values
+                        )
+                        values = itertools.chain(values, added)
                     name = next(
-                        (alias for alias, value in self.problem.values.items() if value == f.value),
+                        (alias for alias, value in values if value == f.value),
                         name,
                     )
                 self._check(self.constants, self.problem.functions, name, 0, "constant")

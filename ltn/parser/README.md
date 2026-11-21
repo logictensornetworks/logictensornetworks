@@ -56,6 +56,8 @@ The default embeddings of numeric literals encode their identities, not their ma
 
 Queries reuse existing numeric groundings by value: if the problem contains `p(1)`, queries such as `p(1.0)` and `p(2/2)` use the same `Constant`, without adding names or individuals to the problem. A query such as `p(2)` still fails unless that value has a grounding.
 
+This also applies to manually added groundings: after adding `grounding.constants["2"]`, a query such as `p(2.0)` uses that same constant. The query does not register another name or add the value to the quantifier domain.
+
 Equal values such as `1` and `1.0` share one `Constant`. To change their grounding, assign to the shared tensor or replace every alias with the same `Constant` object. Replacing only one alias with a different object raises `ValueError` when the grounding is used. This check also covers aliases added directly to `grounding.constants` and runs before cached training and refutation. Adding an alias does not add it to `problem.values` or the quantifier domain.
 
 `sat()` includes the implicit axiom that different interpreted values in the problem are unequal, so that training keeps them apart. This applies even when those values occur only in conjectures, so a problem without explicit axioms can have satisfaction below 1.
