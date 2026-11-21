@@ -1,0 +1,480 @@
+"""Turns a syntax tree into LTN objects. It doesn't depend on the syntax the tree was read from.
+
+Formulas are parsed once into a syntax tree. Every call to `Grounding.sat()` evaluates the tree
+again, so the LTN variables built from trainable constants are created while the caller's
+GradientTape is recording.
+"""
+
+from __future__ import annotations
+
+import functools
+import itertools
+import sys
+import warnings
+from collections.abc import Callable
+
+import tensorflow as tf
+
+import ltn
+from ltn.parser.tree import (
+    AXIOM_ROLES,
+    Atom,
+    BinOp,
+    Chain,
+    Fn,
+    Not,
+    Problem,
+    Quant,
+    Statement,
+    Truth,
+    Var,
+    free_vars,
+)
+
+
+def smooth_equality(alpha: float = 1.0) -> ltn.Predicate:
+    """exp(-alpha * squared distance). Unlike exp(-alpha * distance), its gradient is
+    defined when both arguments are equal."""
+    return ltn.Predicate.Lambda(
+        lambda args: tf.exp(-alpha * tf.reduce_sum(tf.square(args[0] - args[1]), axis=1))
+    )
+
+
+def _model_parameters(model: tf.keras.layers.Layer) -> list[tf.Variable]:
+    if not getattr(model, "trainable", True):
+        return []
+    try:
+        return model.trainable_variables
+    except ValueError as error:
+        # Keras 2 rejects a composite's weights if any Sequential descendant is unbuilt.
+        if not (
+            hasattr(model, "_trainable_weights")
+            and str(error).startswith("Weights for model ")
+            and "have not yet been created" in str(error)
+        ):
+            raise
+    # Use Keras 2's own weights and child modules without its aggregate weight getter.
+    # Flattening the children also handles layers kept in lists/dicts, without building them.
+    params = list(model._trainable_weights)
+    for layer in model._flatten_modules(include_self=False, recursive=False):
+        params += _model_parameters(layer)
+    return params
+
+
+class Grounding:
+    """The default grounding of a problem: constants are trainable embeddings, functions and
+    predicates are MLPs, propositions are trainable truth values. Variables range over the
+    individuals in `domain` and, with `herbrand_depth` > 0, over the functions applied to them up
+    to that depth. Every part of it can be replaced before training.
+
+    Constants that the problem interprets as themselves, such as TPTP's numbers and distinct
+    objects, are one individual if their values are equal, so they share a grounding. An equation
+    between two of them is true or false according to their values, and `sat` includes the
+    implicit axiom that different values are unequal."""
+
+    def __init__(
+        self,
+        problem: Problem,
+        embedding_size: int = 8,
+        extra_individuals: int = 0,
+        herbrand_depth: int = 0,
+    ) -> None:
+        self.problem = problem
+        self.herbrand_depth = herbrand_depth
+        d = embedding_size
+        names = [f for f, arity in problem.functions.items() if arity == 0]
+        names += [f"_individual{i}" for i in range(extra_individuals)]
+        self.constants, self.domain, by_value = {}, [], {}
+        for name in names:
+            value = problem.values.get(name)
+            if value in by_value:  # an equal value is the same individual
+                self.constants[name] = by_value[value]
+                continue
+            self.constants[name] = ltn.Constant(tf.random.uniform([d]), trainable=True)
+            self.domain.append(name)
+            if value is not None:
+                by_value[value] = self.constants[name]
+        self.functions = {
+            f: ltn.Function.MLP([d] * n, d) for f, n in problem.functions.items() if n > 0
+        }
+        self.predicates = {
+            p: ltn.Predicate.MLP([d] * n) for p, n in problem.predicates.items() if n > 0
+        }
+        self.predicates["="] = smooth_equality()
+        self.propositions = {
+            p: ltn.Proposition(0.5, trainable=True) for p, n in problem.predicates.items() if n == 0
+        }
+        self.Not = ltn.Wrapper_Connective(ltn.fuzzy_ops.Not_Std())
+        self.connectives = {
+            "&": ltn.Wrapper_Connective(ltn.fuzzy_ops.And_Prod()),
+            "|": ltn.Wrapper_Connective(ltn.fuzzy_ops.Or_ProbSum()),
+            "=>": ltn.Wrapper_Connective(ltn.fuzzy_ops.Implies_Reichenbach()),
+            "<=>": ltn.Wrapper_Connective(
+                ltn.fuzzy_ops.Equiv(ltn.fuzzy_ops.And_Prod(), ltn.fuzzy_ops.Implies_Reichenbach())
+            ),
+        }
+        self.quantifiers = {
+            "!": ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMeanError(p=2), semantics="forall"),
+            "?": ltn.Wrapper_Quantifier(ltn.fuzzy_ops.Aggreg_pMean(p=6), semantics="exists"),
+        }
+        self.aggregator = ltn.Wrapper_Formula_Aggregator(ltn.fuzzy_ops.Aggreg_pMeanError(p=2))
+
+    @property
+    def trainable_variables(self) -> list[tf.Variable]:
+        self._check_value_aliases()
+        params = [
+            c.tensor for c in self.constants.values() if getattr(c.tensor, "trainable", False)
+        ]
+        params += [
+            p.tensor for p in self.propositions.values() if getattr(p.tensor, "trainable", False)
+        ]
+        for symbol in itertools.chain(self.functions.values(), self.predicates.values()):
+            model = getattr(symbol, "logits_model", symbol.model)
+            params += _model_parameters(model)
+        # constants with equal values share one grounding, so a parameter can come twice
+        return list({id(param): param for param in params}.values())
+
+    def individuals(self, *, training: bool = False) -> list[ltn.core.Term]:
+        """The individuals that variables range over. Call it inside the tape when training:
+        they depend on the trainable constants and functions. Added functions need an arity in
+        `problem.functions` for Herbrand expansion."""
+        self._check_value_aliases()
+        terms = {}
+        for name in self.domain:
+            if name not in self.constants:
+                raise ValueError(f"The domain constant {name} has no grounding in constants.")
+            terms[Fn(name)] = self.constants[name]
+        for _ in range(self.herbrand_depth):
+            new = {}
+            for f, function in self.functions.items():
+                if f not in self.problem.functions:
+                    raise ValueError(
+                        f"The function {f} has no declared arity for Herbrand expansion. "
+                        f"Set grounding.problem.functions[{f!r}] to its arity."
+                    )
+                for args in itertools.product(list(terms), repeat=self.problem.functions[f]):
+                    if Fn(f, args) not in terms:
+                        new[Fn(f, args)] = self._apply(function, [terms[a] for a in args], training)
+            terms.update(new)
+        return list(terms.values())
+
+    def evaluate(
+        self,
+        formula,
+        tape: tf.GradientTape | None = None,
+        individuals: list[ltn.core.Term] | None = None,
+        *,
+        training: bool = False,
+    ) -> ltn.core.Formula:
+        """Builds the LTN formula, using inference mode unless `training=True`.
+
+        Call it inside the tape when training.
+        """
+        self._check_value_aliases()
+        return self._evaluate(
+            formula, self._variable_factory(individuals, tape, training), training
+        )
+
+    def _variable_factory(
+        self,
+        individuals: list[ltn.core.Term] | None,
+        tape: tf.GradientTape | None,
+        training: bool,
+    ) -> Callable[[str], ltn.Variable]:
+        """Build the domain once, inside the current tape, only if a variable needs it."""
+
+        def make_variable(name: str) -> ltn.Variable:
+            nonlocal individuals
+            if individuals is None:
+                individuals = self.individuals(training=training)
+            return self._variable(name, individuals, tape)
+
+        return make_variable
+
+    def _evaluate(
+        self, formula, make_variable: Callable[[str], ltn.Variable], training: bool
+    ) -> ltn.core.Formula:
+        if isinstance(formula, str):
+            formula = self.problem.parse_formula(formula)
+        try:
+            return self._eval(formula, {}, make_variable, training)
+        except RecursionError:
+            raise NotImplementedError(
+                f"The formula is nested too deeply for Python's recursion limit "
+                f"({sys.getrecursionlimit()})."
+            ) from None
+
+    def sat(
+        self,
+        statements: list[Statement] | None = None,
+        tape: tf.GradientTape | None = None,
+        *,
+        training: bool = False,
+    ) -> tf.Tensor:
+        """The satisfaction of `statements`, by default the axioms, as one truth value. It includes
+        the implicit axiom that different values are unequal, and it is 1 if there is nothing to
+        satisfy. Models use inference mode unless `training=True`."""
+        self._check_value_aliases()
+        if statements is None:
+            statements = self.problem.with_role(*AXIOM_ROLES)
+        make_variable = self._variable_factory(None, tape, training)
+        formulas = [self._evaluate(s.formula, make_variable, training) for s in statements]
+        distinct = self._distinct_values(training=training)
+        if distinct is not None:
+            formulas.append(distinct)
+        if not formulas:
+            return tf.constant(1.0)
+        return self.aggregator(formulas).tensor
+
+    def train(
+        self,
+        steps: int,
+        optimizer: tf.keras.optimizers.Optimizer | None = None,
+        reuse_graph: bool = False,
+        statements: list[Statement] | None = None,
+    ) -> float:
+        """Maximizes the satisfaction of `statements`, by default the axioms, as `sat` computes it.
+        Models use training mode, enabling layers such as Dropout and BatchNormalization.
+        Returns the last satisfaction, or the current one if `steps` is 0. A CNF problem usually
+        puts its conjecture in negated_conjecture clauses, which are not axioms: to train on them
+        too, pass `statements=problem.statements`.
+
+        By default each call builds a new graph, and a new Adam(0.01) if no optimizer is given. If
+        you call this repeatedly, for example to log between calls, `reuse_graph=True` saves the
+        time it takes to build the graph: the first call stores its graph and its optimizer on this
+        object, and later calls with the flag reuse both. If a later call with the flag passes a
+        different optimizer object, it builds a new graph with that one, because a graph is tied to
+        its optimizer. `optimizer=None` keeps the stored one.
+
+        The flag changes the results, not only the speed. Each call without it starts a new Adam,
+        so `train(5)` twice doesn't match `train(10)`. With the flag the optimizer's state carries
+        on and the two match exactly. Passing the same optimizer to two calls without the flag also
+        matches `train(10)`.
+
+        Only use the flag if you are sure that the graph hasn't changed. A kept graph picks up new
+        values of constants, propositions and network weights, through `assign` or training, and
+        the optimizer's learning rate, for example `optimizer.learning_rate = 0.5`. It silently
+        misses other changes to the grounding and keeps using the old objects, with no error: a
+        new network or constant object for a symbol, the domain, a new connective or quantifier, and
+        `p` inside a quantifier (about 0.8 in the kept graph and 0.5 in a new one, in one test).
+        To replace a kept graph after such a change, pass a different optimizer. A kept graph is
+        also tied to its effective statements: changing their sequence or formulas builds a new
+        graph. The default axioms and the same explicit sequence share a graph. Changing statements
+        also starts a new optimizer, unless it is given one, because a Keras optimizer only trains
+        the parameters it started with, and other statements can have other parameters."""
+        self._check_value_aliases()
+        if steps < 1:  # nothing to train
+            return float(self.sat(statements))
+        if statements is None:
+            statements = self.problem.with_role(*AXIOM_ROLES)
+        kept_step, kept_optimizer, kept_statements = getattr(self, "_kept_step", (None, None, None))
+        key = tuple(statements)
+        if reuse_graph and key == kept_statements:
+            optimizer = optimizer or kept_optimizer
+        optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
+
+        @tf.function
+        def step():
+            with tf.GradientTape() as tape:
+                sat = self.sat(statements, tape=tape, training=True)
+                loss = 1.0 - sat
+            # The forward pass may build a custom model and create its weights.
+            params = self.trainable_variables
+            grads = tape.gradient(loss, params)
+            pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
+            if pairs:  # without axioms, for example, there is nothing to train
+                optimizer.apply_gradients(pairs)
+            return sat
+
+        if reuse_graph and optimizer is kept_optimizer and key == kept_statements:
+            # the new tf.function costs nothing: it has no graph until its first call
+            step = kept_step
+        for _ in range(steps):
+            sat = step()
+        if reuse_graph:  # only now, so that a call that fails keeps nothing
+            self._kept_step = step, optimizer, key
+        return float(sat)
+
+    def refute(
+        self,
+        formula,
+        q: float = 0.95,
+        steps: int = 2000,
+        alpha: float = 0.05,
+        beta: float = 10.0,
+        optimizer: tf.keras.optimizers.Optimizer | None = None,
+    ) -> tuple[float, float]:
+        """Reasoning by refutation, as in tutorials/4-reasoning.ipynb: look for a grounding that
+        satisfies the axioms (sat >= q) but falsifies `formula`. Returns the final satisfaction
+        of the axioms and truth value of `formula`. This is a local search: a counterexample
+        shows that `formula` is not a consequence, but a failed search proves nothing. Start
+        from fresh groundings, since saturated predicates have vanishing gradients."""
+        self._check_value_aliases()
+        if isinstance(formula, str):
+            formula = self.problem.parse_formula(formula)
+        if steps < 1:  # nothing to search
+            return float(self.sat()), float(self.evaluate(formula).tensor)
+        optimizer = optimizer or tf.keras.optimizers.Adam(0.01)
+
+        @tf.function
+        def step():
+            with tf.GradientTape() as tape:
+                sat_kb = self.sat(tape=tape)
+                truth = self.evaluate(formula, tape=tape).tensor
+                loss = truth + tf.keras.activations.elu(beta * (q - sat_kb), alpha=alpha)
+            params = self.trainable_variables
+            grads = tape.gradient(loss, params)
+            pairs = [(g, p) for g, p in zip(grads, params, strict=True) if g is not None]
+            if pairs:
+                optimizer.apply_gradients(pairs)
+            return sat_kb, truth
+
+        for _ in range(steps):
+            step()
+        return float(self.sat()), float(self.evaluate(formula).tensor)
+
+    def _check_value_aliases(self) -> None:
+        """Reject replacements or added names that split one interpreted value's grounding."""
+        by_value = {}
+        for name, constant in self.constants.items():
+            if name in self.problem.values:
+                value = self.problem.values[name]
+            elif self.problem.interpret_constant is not None:
+                value = self.problem.interpret_constant(name)
+                if value is None:
+                    continue
+            else:
+                continue
+            if value in by_value:
+                other_name, other_constant = by_value[value]
+                if constant is not other_constant:
+                    raise ValueError(
+                        f"The constants {other_name} and {name} have the same interpreted value "
+                        "but different groundings. Assign the same Constant to every alias, "
+                        "or update their shared tensor with assign()."
+                    )
+            else:
+                by_value[value] = name, constant
+
+    def _distinct_values(self, *, training: bool = False) -> ltn.core.Formula | None:
+        """The implicit axiom that different values are unequal, as one formula: for every pair of
+        individuals with different values, they are not equal. None if there are fewer than two."""
+        names, seen = [], set()
+        for name, value in self.problem.values.items():
+            if value not in seen:  # one name for each value, the one that has the grounding
+                seen.add(value)
+                names.append(name)
+        if len(names) < 2:
+            return None
+        self._check(self.predicates, {"=": 2}, "=", 2, "predicate")
+        for name in names:
+            self._check(self.constants, self.problem.functions, name, 0, "constant")
+        k = len(names)
+        values = tf.stack([self.constants[name].tensor for name in names])
+        # Excluded self-pairs can have undefined gradients in custom equality or negation.
+        pairs = tf.where(tf.logical_not(tf.eye(k, dtype=tf.bool)))
+        left = ltn.Variable("DistinctLeft", tf.gather(values, pairs[:, 0]))
+        right = ltn.Variable("DistinctRight", tf.gather(values, pairs[:, 1]))
+        equal = self.predicates["="](ltn.diag(left, right), training=training)
+        unequal = self.Not(equal).tensor
+        return ltn.core.Formula(self.quantifiers["!"].aggreg_op(unequal, axis=0), [])
+
+    def _variable(
+        self, label: str, individuals: list[ltn.core.Term], tape: tf.GradientTape | None
+    ) -> ltn.Variable:
+        if not individuals:
+            raise ValueError(
+                "Variables have nothing to range over, because the individuals list is empty. "
+                "Pass a nonempty individuals list to evaluate, fill the grounding's domain, "
+                "or pass extra_individuals=1 or more to Grounding."
+            )
+        if tape is not None:
+            return ltn.Variable.from_constants(label, individuals, tape=tape)
+        with warnings.catch_warnings():  # no gradients needed, e.g. when querying
+            warnings.simplefilter("ignore")
+            return ltn.Variable.from_constants(label, individuals)
+
+    @staticmethod
+    def _check(groundings: dict, arities: dict, name: str, arity: int, kind: str) -> None:
+        """A clear error for a symbol that a query uses wrongly, instead of a KeyError."""
+        if name not in groundings:
+            if arities.get(name) == arity:
+                raise ValueError(f"The {kind} {name} has no grounding.")
+            raise ValueError(f"{name} is not a {kind} of the problem.")
+        if arities.get(name, arity) != arity:
+            expected = arities[name]
+            plural = "s" * (expected != 1)
+            raise ValueError(f"The {kind} {name} takes {expected} argument{plural}, not {arity}.")
+
+    @staticmethod
+    def _apply(
+        symbol: ltn.Predicate | ltn.Function, args: list, training: bool
+    ) -> ltn.core.Expression:
+        """FromLogits keeps its list input, including for a single argument."""
+        inputs = args[0] if len(args) == 1 and not hasattr(symbol, "logits_model") else args
+        return symbol(inputs, training=training)
+
+    def _eval(self, f, env: dict, make_variable, training: bool):
+        recurse = lambda g: self._eval(g, env, make_variable, training)
+        if isinstance(f, Var):
+            if f.name not in env:
+                raise ValueError(f"Free variable {f.name} is not bound.")
+            return env[f.name]
+        if isinstance(f, Fn):
+            if not f.args:
+                name = f.name
+                if (
+                    f.value is not None
+                    and name not in self.constants
+                    and name not in self.problem.functions
+                ):
+                    values = self.problem.values.items()
+                    if self.problem.interpret_constant is not None:
+                        added = (
+                            (alias, self.problem.interpret_constant(alias))
+                            for alias in self.constants
+                            if alias not in self.problem.values
+                        )
+                        values = itertools.chain(values, added)
+                    name = next(
+                        (alias for alias, value in values if value == f.value),
+                        name,
+                    )
+                self._check(self.constants, self.problem.functions, name, 0, "constant")
+                return self.constants[name]
+            self._check(self.functions, self.problem.functions, f.name, len(f.args), "function")
+            return self._apply(self.functions[f.name], [recurse(a) for a in f.args], training)
+        if isinstance(f, Atom):
+            if not f.args:
+                self._check(self.propositions, self.problem.predicates, f.pred, 0, "proposition")
+                return self.propositions[f.pred]
+            if f.pred == "=":
+                values = [
+                    (a.value if a.value is not None else self.problem.values.get(a.name))
+                    if isinstance(a, Fn) and not a.args
+                    else None
+                    for a in f.args
+                ]
+                if None not in values:  # both are interpreted as themselves
+                    return ltn.Proposition(1.0 if values[0] == values[1] else 0.0, trainable=False)
+                self._check(self.predicates, {"=": 2}, "=", 2, "predicate")
+            else:
+                arity = len(f.args)
+                self._check(self.predicates, self.problem.predicates, f.pred, arity, "predicate")
+            return self._apply(self.predicates[f.pred], [recurse(a) for a in f.args], training)
+        if isinstance(f, Truth):
+            return ltn.Proposition(1.0 if f.value else 0.0, trainable=False)
+        if isinstance(f, Not):
+            return self.Not(recurse(f.arg))
+        if isinstance(f, BinOp):
+            return self.connectives[f.op](recurse(f.left), recurse(f.right))
+        if isinstance(f, Chain):
+            return functools.reduce(self.connectives[f.op], [recurse(a) for a in f.args])
+        if isinstance(f, Quant):
+            free = set(free_vars(f.body))
+            bound = {name: make_variable(name) for name in f.vars if name in free}
+            body = self._eval(f.body, {**env, **bound}, make_variable, training)
+            # LTN rejects a quantifier over a variable that the body doesn't use
+            used = [v for v in bound.values() if v.label in body.free_vars]
+            return self.quantifiers[f.kind](used, body) if used else body
+        raise TypeError(f"Unknown node {f!r}.")
