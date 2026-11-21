@@ -1,0 +1,41 @@
+name: Recover runner startup failures
+
+on:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: runner-recovery-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    # A second failed attempt stays red; this is never a retry loop.
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+      pull-requests: read
+    steps:
+    # For workflow_run, github.sha is the trusted default-branch commit.
+    # Never load the triggering PR's checkout or artifacts with this write token.
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Retry a confirmed runner provisioning failure
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      with:
+        script: |
+          const recover = require('./.github/scripts/retry-runner-startup.cjs');
+          const result = await recover({ github, context, core });
+          await core.summary
+            .addHeading('Runner startup recovery')
+            .addRaw(result.reason)
+            .write();
