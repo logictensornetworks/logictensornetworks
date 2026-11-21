@@ -80,7 +80,16 @@ jobs:
         if [ "${{ matrix.tensorflow }}" != "latest" ]; then
           tensorflow="tensorflow==${{ matrix.tensorflow }}"
         fi
-        uv pip install -e . --group dev "$tensorflow"
+        uv pip install -e ".[parser]" --group dev "$tensorflow"
         python -c "import tensorflow as tf, keras; print('tensorflow', tf.__version__, '| keras', keras.__version__)"
     - name: Run tests
       run: python -m pytest test -v
+    # The tests import ltn from the checkout, so they pass even if the wheel lacks a subpackage
+    # or a data file, such as the parser's grammar. This installs the wheel and uses it from
+    # another folder.
+    - name: Test the built package
+      run: |
+        uv build --wheel --out-dir dist
+        uv pip install --no-deps --reinstall dist/*.whl
+        cd "$RUNNER_TEMP"
+        python -c "from ltn.parser import tptp; assert 'site-packages' in tptp.__file__, tptp.__file__; tptp.parse('fof(test, axiom, p(a)).'); print('parsed with', tptp.__file__)"
