@@ -417,6 +417,8 @@ class Grounding:
     def _eval(self, f, env: dict, make_variable, training: bool):
         recurse = lambda g: self._eval(g, env, make_variable, training)
         if isinstance(f, Var):
+            if f.name not in env:
+                raise ValueError(f"Free variable {f.name} is not bound.")
             return env[f.name]
         if isinstance(f, Fn):
             if not f.args:

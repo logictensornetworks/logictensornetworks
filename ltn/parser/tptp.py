@@ -145,10 +145,14 @@ class _SyntaxTree(lark.Transformer):
     def fof_infix_unary(self, left, right) -> Not:
         return Not(Atom("=", (left, right)))
 
-    def true_formula(self) -> Truth:
+    def true_formula(self, word, *args) -> Truth:
+        if args:
+            raise SyntaxError(f"{word} at line {word.line} takes no arguments.")
         return Truth(True)
 
-    def false_formula(self) -> Truth:
+    def false_formula(self, word, *args) -> Truth:
+        if args:
+            raise SyntaxError(f"{word} at line {word.line} takes no arguments.")
         return Truth(False)
 
     def fof_plain_term(self, functor, *args) -> Fn:
@@ -218,7 +222,7 @@ def _value(name: str):
     """TPTP interprets numbers and distinct objects as themselves. Numbers are equal if their values
     are, so 1/2 = 0.5, and a number is never equal to a distinct object. Other names return None."""
     if _DISTINCT_OBJECT.fullmatch(name):
-        return "distinct object", name
+        return "distinct object", re.sub(r'\\(["\\])', r"\1", name[1:-1])
     if _NUMBER.fullmatch(name):
         return "number", fractions.Fraction(name)
     return None

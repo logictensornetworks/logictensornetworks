@@ -42,11 +42,15 @@ For a custom training loop, `grounding.trainable_variables` collects the trainab
 
 `grounding.sat()` aggregates the explicit axioms and the implicit distinctness constraint described below into one truth value, and `grounding.train()` maximizes it. It returns 1 when neither contributes a constraint. A CNF problem usually puts its conjecture in `negated_conjecture` clauses, which are not explicit axioms. To train on every clause, pass `statements=problem.statements`.
 
+With the default stable aggregator, an explicit `$true` axiom has satisfaction about `0.9999`; an unconstrained problem returns exactly `1.0`.
+
 `grounding.refute(formula, q=0.95)` searches for a grounding whose axiom satisfaction is at least `q` while the formula's truth value is below `q`. It changes the grounding and returns the final axiom satisfaction and formula truth value. Start from a fresh grounding: saturated models can have poor search gradients. A counterexample refutes the consequence for the configured LTN problem and threshold; an unsuccessful local search proves nothing.
 
 Ordinary equality, such as `a = b`, defaults to smooth similarity, `exp(-squared_distance(a, b))`, rather than a crisp identity test.
 
 TPTP interprets numbers and distinct objects such as `"Apple"` as themselves. An equation between two of them is true or false according to their values, so `"Apple" != "Microsoft"` and `1/2 = 0.5` are true. These comparisons also work in queries when the literals do not occur in the problem, without adding individuals to the domain. Other uses of a literal, such as `p(2)`, still need a grounding for it.
+
+In `Problem.values`, distinct objects store their character strings with quotes removed and escaped quotes and backslashes decoded. Constant names retain their original TPTP spelling, and distinct objects remain separate from numeric values.
 
 The default embeddings of numeric literals encode their identities, not their magnitudes or numeric features: `p(2)` does not automatically receive `[2.0]`. Replace the constants and models when grounding actual numeric data. Defined arithmetic symbols such as `$less` and `$sum` are unsupported.
 
